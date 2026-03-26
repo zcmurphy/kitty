@@ -553,6 +553,55 @@
     background: var(--green-bg); color: var(--green); margin-left: 4px; vertical-align: middle;
   }
 
+
+  /* ── API / SYNC UI ── */
+  .toast-wrap {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    z-index: 500; display: flex; flex-direction: column; align-items: center; gap: 8px;
+    pointer-events: none;
+  }
+  .toast {
+    background: var(--ink); color: var(--surface); font-size: 13px; font-weight: 500;
+    padding: 9px 18px; border-radius: 100px; box-shadow: var(--shadow-lg);
+    animation: toastIn 0.2s ease; white-space: nowrap;
+  }
+  .toast.error { background: var(--red); }
+  .toast.success { background: var(--green); }
+  @keyframes toastIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  .sync-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--ink-4);
+    display: inline-block; margin-left: 6px; vertical-align: middle; transition: background 0.3s;
+  }
+  .sync-dot.syncing { background: var(--amber); animation: pulse 1s infinite; }
+  .sync-dot.ok { background: var(--green); }
+  .sync-dot.err { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .screen-loader {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; z-index: 400;
+  }
+  .screen-loader.hidden { display: none; }
+  .loader-spinner {
+    width: 36px; height: 36px; border: 3px solid var(--border);
+    border-top-color: var(--ink); border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loader-text { font-size: 13px; color: var(--ink-3); font-weight: 500; }
+
+
+  /* ── INLINE DELETE CONFIRM ── */
+  .delete-confirm-strip {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--red-bg); border: 1.5px solid rgba(220,38,38,0.25);
+    border-radius: 8px; padding: 8px 12px;
+    animation: fadeIn 0.15s ease;
+  }
+  .delete-confirm-strip span {
+    font-size: 12px; font-weight: 600; color: var(--red); flex: 1; min-width: 120px;
+  }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -573,7 +622,7 @@
   <header>
     <div class="logo">
       <div class="logo-dot"></div>
-      Kitty
+      Kitty<span class="sync-dot" id="syncDot" title="Sync status"></span>
     </div>
     <div id="headerActions">
       <button class="btn btn-primary btn-sm" onclick="showNewTripModal()">+ New Trip</button>
@@ -656,6 +705,12 @@
 
   </main>
 </div>
+
+<!-- TOAST -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- LOADER -->
+<div class="screen-loader" id="screenLoader"><div class="loader-spinner"></div><div class="loader-text">Loading…</div></div>
 
 <!-- MODAL: NEW TRIP -->
 <div class="modal-backdrop hidden" id="modalNewTrip">
@@ -883,9 +938,14 @@
       </div>
 
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('modalTripSettings')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveTripSettings()">Save Changes</button>
+    <div class="modal-footer" style="justify-content:space-between">
+      <div id="deleteTripZone">
+        <button class="btn btn-outline btn-delete-outline btn-sm" onclick="showDeleteTripConfirm()">Delete Trip</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="closeModal('modalTripSettings')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveTripSettings()">Save Changes</button>
+      </div>
     </div>
   </div>
 </div>
@@ -903,8 +963,115 @@ const CATS = { food:'🍽️', drinks:'🥂', transport:'🚗', hotel:'🏨', ac
 let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
-function save() { try { localStorage.setItem('kitty_v2', JSON.stringify(state)); } catch(e){} }
-function load() { try { const d=localStorage.getItem('kitty_v2'); if(d) state=JSON.parse(d); } catch(e){} }
+const API = 'https://kitty-api.zbcimz.workers.dev/api';
+
+// ── local cache ──
+function lsSave() { try { localStorage.setItem('kitty_v3', JSON.stringify(state)); } catch(e){} }
+function lsLoad() { try { const d=localStorage.getItem('kitty_v3'); if(d){ state=JSON.parse(d); return true; } } catch(e){} return false; }
+
+// ── sync indicator ──
+function setSyncDot(s) {
+  const d=document.getElementById('syncDot'); if(!d) return;
+  d.className='sync-dot '+s;
+}
+
+// ── toast ──
+function toast(msg, type='', duration=2800) {
+  const w=document.getElementById('toastWrap');
+  const t=document.createElement('div');
+  t.className='toast'+(type?' '+type:'');
+  t.textContent=msg;
+  w.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity 0.3s'; setTimeout(()=>t.remove(),300); }, duration);
+}
+
+// ── generic fetch wrapper ──
+async function api(method, path, body) {
+  setSyncDot('syncing');
+  try {
+    const opts = { method, headers: {'Content-Type':'application/json'} };
+    if(body) opts.body = JSON.stringify(body);
+    const r = await fetch(API+path, opts);
+    if(!r.ok) { const e=await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
+    setSyncDot('ok');
+    return await r.json();
+  } catch(e) {
+    setSyncDot('err');
+    throw e;
+  }
+}
+
+// ── load all trips from API on startup ──
+async function loadFromAPI() {
+  const loader=document.getElementById('screenLoader');
+  loader.classList.remove('hidden');
+  try {
+    const trips = await api('GET', '/trips');
+    // For each trip card we have summary data; full data loads on openTrip
+    state.trips = trips.map(t=>({
+      id: t.id, name: t.name,
+      startDate: t.start_date||'', endDate: t.end_date||'',
+      icon: t.icon||'', coverPhoto: t.cover_photo||null,
+      people: [], expenses: [], history: [], settledPayments: [],
+      _loaded: false
+    }));
+    lsSave();
+  } catch(e) {
+    toast('Could not reach server — using local data', 'error', 4000);
+    lsLoad();
+  } finally {
+    loader.classList.add('hidden');
+  }
+}
+
+// ── load full trip data when opening a trip ──
+async function loadTrip(id) {
+  const loader=document.getElementById('screenLoader');
+  loader.classList.remove('hidden');
+  try {
+    const data = await api('GET', '/trips/'+id);
+    const idx = state.trips.findIndex(t=>t.id===id);
+    const trip = {
+      id: data.id, name: data.name,
+      startDate: data.start_date||'', endDate: data.end_date||'',
+      icon: data.icon||'', coverPhoto: data.cover_photo||null,
+      people: data.people||[],
+      expenses: (data.expenses||[]).map(e=>({
+        id: e.id, desc: e.desc, amount: e.amount, paidBy: e.paid_by,
+        date: e.date||'', note: e.note||'', category: e.category||'other',
+        splitBetween: e.splitBetween||[], photo: e.photo||null,
+        paidSettlements: e.paidSettlements||{}
+      })),
+      history: (data.history||[]).map(h=>({
+        ts: h.ts, who: h.who, action: h.action,
+        desc: h.desc, amount: h.amount, changes: h.changes
+      })),
+      settledPayments: (data.settledPayments||[]).map(s=>({
+        id: s.id, from: s.from_person, to: s.to_person, amt: s.amount, ts: s.ts
+      })),
+      _loaded: true
+    };
+    if(idx>=0) state.trips[idx]=trip; else state.trips.push(trip);
+    lsSave();
+    return trip;
+  } catch(e) {
+    toast('Failed to load trip data', 'error');
+    return state.trips.find(t=>t.id===id);
+  } finally {
+    loader.classList.add('hidden');
+  }
+}
+
+// ── save = write-through to API + update local cache ──
+async function save(op) {
+  lsSave(); // always write local immediately
+  if(!op) return;
+  try {
+    await op();
+  } catch(e) {
+    toast('Sync error: '+e.message, 'error', 4000);
+  }
+}
 function uid() { return Math.random().toString(36).slice(2,9)+Date.now().toString(36); }
 function fmt(n) { const a=Math.abs(n); return '$'+(a<0.005?'0.00':a.toFixed(2)); }
 function initials(n) { return n.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
@@ -959,7 +1126,7 @@ function renderHome() {
   grid.appendChild(nc);
 }
 
-function openTrip(id) {
+async function openTrip(id) {
   state.currentTripId=id;
   document.getElementById('screenHome').classList.remove('active');
   document.getElementById('screenTrip').classList.add('active');
@@ -971,6 +1138,8 @@ function openTrip(id) {
   document.getElementById('tabBalances').style.display='none';
   document.getElementById('tabSettle').style.display='none';
   document.getElementById('tabHistory').style.display='none';
+  const trip=state.trips.find(t=>t.id===id);
+  if(!trip||!trip._loaded) await loadTrip(id);
   renderAll();
 }
 
@@ -1000,11 +1169,24 @@ function renderAll() {
   document.getElementById('sumCount').textContent=t.expenses.length;
   document.getElementById('sumPeople').textContent=t.people.length;
   document.getElementById('sumPer').textContent=t.people.length?fmt(total/t.people.length):'$0';
+  // Tally individual expense settlements
+  let settledAmt=0;
+  t.expenses.forEach(exp=>{
+    if(exp.paidSettlements){
+      const share=exp.splitBetween.length?exp.amount/exp.splitBetween.length:0;
+      Object.values(exp.paidSettlements).forEach(s=>{
+        settledAmt+=(typeof s==='object'?s.amt:share);
+      });
+    }
+  });
+  // Also tally trip-level settled payments
+  (t.settledPayments||[]).forEach(sp=>{ settledAmt+=sp.amt||0; });
   const settleCard=document.getElementById('sumSettled');
   if(settleCard) {
-    settleCard.textContent = totalDebts===0 ? '—' : `${settledCount}/${totalDebts}`;
+    settleCard.textContent = settledAmt>0.005 ? fmt(settledAmt) : '—';
     const settleLabel=document.getElementById('sumSettledLabel');
-    if(settleLabel) settleLabel.textContent = totalDebts===0||settledCount===totalDebts ? 'All settled' : 'Settled';
+    const totalOwed=Object.values(computeNet()).filter(n=>n<-0.005).reduce((s,n)=>s+Math.abs(n),0);
+    if(settleLabel) settleLabel.textContent = settledAmt>0.005&&totalOwed<0.01 ? 'All settled ✓' : 'Paid back';
   }
   document.getElementById('tripTitle').textContent=t.name;
   document.getElementById('tripMeta').textContent=`${t.startDate||''}${t.endDate?' – '+t.endDate:''} · ${t.people.length} person${t.people.length!==1?'s':''}`;
@@ -1162,17 +1344,25 @@ function showExpenseDetail(id) {
 
       btn.addEventListener('click', ()=>{
         if(isPaid){
-          customConfirm('Mark as Unpaid', `Mark ${person}'s share (${each}) as unpaid?`, ()=>{
+          customConfirm('Mark as Unpaid', `Mark ${person}'s share (${each}) as unpaid?`, async()=>{
             delete exp.paidSettlements[person];
             logHistory(t,'edited',person,exp.desc,share,`${person}'s share marked unpaid`);
-            save(); renderAll(); showExpenseDetail(id);
+            renderAll(); showExpenseDetail(id);
+            await save(async()=>{
+              await api('PUT','/expenses/'+exp.id,{desc:exp.desc,amount:exp.amount,paidBy:exp.paidBy,date:exp.date,note:exp.note,category:exp.category,splitBetween:exp.splitBetween,photo:exp.photo,paidSettlements:exp.paidSettlements});
+              await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
+            });
           });
         } else {
-          customConfirm('Settle Share', `Mark ${person}'s share of ${each} as paid back to ${exp.paidBy}?`, ()=>{
+          customConfirm('Settle Share', `Mark ${person}'s share of ${each} as paid back to ${exp.paidBy}?`, async()=>{
             if(!exp.paidSettlements) exp.paidSettlements={};
             exp.paidSettlements[person]={ts:new Date().toISOString(),amt:share};
             logHistory(t,'settled',person,exp.desc,share,`${person} paid back ${each} to ${exp.paidBy}`);
-            save(); renderAll(); showExpenseDetail(id);
+            renderAll(); showExpenseDetail(id);
+            await save(async()=>{
+              await api('PUT','/expenses/'+exp.id,{desc:exp.desc,amount:exp.amount,paidBy:exp.paidBy,date:exp.date,note:exp.note,category:exp.category,splitBetween:exp.splitBetween,photo:exp.photo,paidSettlements:exp.paidSettlements});
+              await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
+            });
           });
         }
       });
@@ -1231,6 +1421,9 @@ function showTripSettings() {
     document.getElementById('coverUploadZone').style.display = '';
   }
   document.getElementById('coverPhotoInput').value = '';
+  // reset delete zone in case it was expanded
+  const dz=document.getElementById('deleteTripZone');
+  if(dz) dz.innerHTML='<button class="btn btn-outline btn-delete-outline btn-sm" onclick="showDeleteTripConfirm()">Delete Trip</button>';
   openModal('modalTripSettings');
   setTimeout(()=>document.getElementById('stName').focus(), 100);
 }
@@ -1259,7 +1452,7 @@ function removeCoverPhoto() {
   document.getElementById('coverPhotoInput').value = '';
 }
 
-function saveTripSettings() {
+async function saveTripSettings() {
   const t = currentTrip(); if(!t) return;
   const name = document.getElementById('stName').value.trim();
   if(!name) { alert('Trip name cannot be empty.'); return; }
@@ -1277,11 +1470,40 @@ function saveTripSettings() {
     t.coverPhoto = settingsCoverPhoto;
   }
   if(oldName !== name) logHistory(t, 'edited', '—', `Trip renamed to "${name}"`, null, null);
-  save();
   closeModal('modalTripSettings');
-  renderAll();
-  renderHome(); // refresh home grid too
+  renderAll(); renderHome();
+  await save(()=>api('PUT','/trips/'+t.id,{name,startDate:t.startDate,endDate:t.endDate,icon:t.icon,coverPhoto:t.coverPhoto}));
+  toast('Trip updated', 'success');
 }
+
+function showDeleteTripConfirm() {
+  const t = currentTrip(); if(!t) return;
+  const zone = document.getElementById('deleteTripZone');
+  zone.innerHTML = `
+    <div class="delete-confirm-strip">
+      <span>Delete "${esc(t.name)}"? This cannot be undone.</span>
+      <button class="btn btn-danger btn-sm" id="doDeleteTripBtn">Yes, delete</button>
+      <button class="btn btn-ghost btn-sm" onclick="cancelDeleteTripConfirm()">Cancel</button>
+    </div>`;
+  document.getElementById('doDeleteTripBtn').addEventListener('click', doDeleteTrip);
+}
+
+function cancelDeleteTripConfirm() {
+  const zone = document.getElementById('deleteTripZone');
+  zone.innerHTML = '<button class="btn btn-outline btn-delete-outline btn-sm" onclick="showDeleteTripConfirm()">Delete Trip</button>';
+}
+
+async function doDeleteTrip() {
+  const t = currentTrip(); if(!t) return;
+  closeModal('modalTripSettings');
+  try { await api('DELETE', '/trips/' + t.id); } catch(e) {}
+  state.trips = state.trips.filter(tr => tr.id !== t.id);
+  state.currentTripId = null;
+  lsSave();
+  toast('Trip deleted');
+  goHome();
+}
+
 
 let editingExpenseId = null;
 let editPhoto = null;
@@ -1366,7 +1588,7 @@ function handleEditPhoto(e){
   reader.readAsDataURL(file);
 }
 
-function saveEditExpense(){
+async function saveEditExpense(){
   const t=currentTrip();
   const exp=t.expenses.find(e=>e.id===editingExpenseId); if(!exp) return;
   const desc=document.getElementById('editDesc').value.trim();
@@ -1393,16 +1615,25 @@ function saveEditExpense(){
   exp.desc=desc; exp.amount=amount; exp.paidBy=paidBy; exp.date=date;
   exp.note=note; exp.category=category; exp.splitBetween=splitBetween; exp.photo=editPhoto;
   logHistory(t,'edited',who,desc,amount,changes.length?changes.join(', '):null);
-  save(); closeModal('modalEditExpense'); renderAll();
+  closeModal('modalEditExpense'); renderAll();
+  await save(async()=>{
+    await api('PUT','/expenses/'+editingExpenseId,{desc,amount,paidBy,date,note,category,splitBetween,photo:editPhoto,paidSettlements:exp.paidSettlements||{}});
+    await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
+  });
 }
 
 function delExp(id) {
   const t=currentTrip();
   const exp=t.expenses.find(e=>e.id===id); if(!exp) return;
-  customConfirm('Delete Expense', `Delete "${exp.desc}" (${fmt(exp.amount)})?`, () => {
+  customConfirm('Delete Expense', `Delete "${exp.desc}" (${fmt(exp.amount)})?`, async() => {
     logHistory(t,'deleted',exp.paidBy,exp.desc,exp.amount);
     t.expenses=t.expenses.filter(e=>e.id!==id);
-    save(); renderAll();
+    renderAll();
+    await save(async()=>{
+      await api('DELETE','/expenses/'+id);
+      await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
+    });
+    toast('Expense deleted');
   });
 }
 
@@ -1413,6 +1644,16 @@ function computeNet() {
     net[exp.paidBy]=(net[exp.paidBy]||0)+exp.amount;
     const share=exp.splitBetween.length?exp.amount/exp.splitBetween.length:0;
     exp.splitBetween.forEach(p=>{ net[p]=(net[p]||0)-share; });
+    // If a person has settled their individual share, it cancels their debt
+    // and reduces what the payer is still owed
+    if(exp.paidSettlements){
+      Object.keys(exp.paidSettlements).forEach(person=>{
+        const s=exp.paidSettlements[person];
+        const amt=typeof s==='object'?s.amt:share;
+        net[person]=(net[person]||0)+amt;       // debtor paid back → less owed
+        net[exp.paidBy]=(net[exp.paidBy]||0)-amt; // payer received it back
+      });
+    }
   });
   return net;
 }
@@ -1519,13 +1760,18 @@ function confirmSettlement(sid, from, to, amt) {
   customConfirm(
     'Settle Up',
     `Mark ${from} → ${to} (${fmt(amt)}) as paid?`,
-    () => {
+    async() => {
       const t=currentTrip();
       if(!t.settledPayments) t.settledPayments=[];
       if(t.settledPayments.some(p=>p.id===sid)) return;
-      t.settledPayments.push({id:sid, from, to, amt, ts:new Date().toISOString()});
+      const ts=new Date().toISOString();
+      t.settledPayments.push({id:sid, from, to, amt, ts});
       logHistory(t,'settled',from,`Payment to ${to}`,amt,`${from} paid ${fmt(amt)} to ${to}`);
-      save(); renderAll();
+      renderAll();
+      await save(async()=>{
+        await api('POST','/settlements',{id:sid,tripId:t.id,from,to,amt,ts});
+        await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
+      });
     }
   );
 }
@@ -1562,12 +1808,16 @@ function showNewTripModal(){
   setTimeout(()=>document.getElementById('nTripName').focus(),100);
 }
 
-function createTrip(){
+async function createTrip(){
   const name=document.getElementById('nTripName').value.trim();
   if(!name){alert('Please enter a trip name.');return;}
   const people=document.getElementById('nTripPeople').value.split(',').map(s=>s.trim()).filter(Boolean);
-  const trip={id:uid(),name,startDate:document.getElementById('nTripStart').value,endDate:document.getElementById('nTripEnd').value,people,expenses:[],history:[]};
-  state.trips.push(trip); save(); closeModal('modalNewTrip'); openTrip(trip.id);
+  const trip={id:uid(),name,startDate:document.getElementById('nTripStart').value,endDate:document.getElementById('nTripEnd').value,people,expenses:[],history:[],settledPayments:[],_loaded:true};
+  state.trips.push(trip);
+  closeModal('modalNewTrip');
+  await save(()=>api('POST','/trips',{id:trip.id,name,startDate:trip.startDate,endDate:trip.endDate,people}));
+  toast('Trip created', 'success');
+  openTrip(trip.id);
 }
 
 function showPeopleModal(){ renderPplList(); openModal('modalPeople'); }
@@ -1579,19 +1829,28 @@ function renderPplList(){
     : `<div style="color:var(--ink-3);font-size:13px;text-align:center;padding:12px">No people yet.</div>`;
 }
 
-function addPerson(){
+async function addPerson(){
   const input=document.getElementById('addPersonName');
   const name=input.value.trim(); if(!name)return;
   const t=currentTrip();
-  if(!t.people.includes(name)){t.people.push(name);save();}
-  input.value=''; renderPplList(); renderAll();
+  if(!t.people.includes(name)){
+    t.people.push(name);
+    input.value=''; renderPplList(); renderAll();
+    await save(()=>api('POST','/trips/'+t.id+'/people',{name}));
+  } else {
+    input.value='';
+  }
 }
 
 function removePerson(idx){
   const t=currentTrip(); const name=t.people[idx];
   const used=t.expenses.some(e=>e.paidBy===name||e.splitBetween.includes(name));
-  if(used){ customConfirm('Remove Person', `${name} has linked expenses. Remove anyway?`, ()=>{ t.people.splice(idx,1); save(); renderPplList(); renderAll(); }); return; }
-  t.people.splice(idx,1); save(); renderPplList(); renderAll();
+  const doRemove=async()=>{
+    t.people.splice(idx,1); renderPplList(); renderAll();
+    await save(()=>api('DELETE','/trips/'+t.id+'/people',{name}));
+  };
+  if(used){ customConfirm('Remove Person', `${name} has linked expenses. Remove anyway?`, doRemove); return; }
+  doRemove();
 }
 
 function showExpenseModal(){
@@ -1634,7 +1893,7 @@ function handlePhoto(e){
   reader.readAsDataURL(file);
 }
 
-function saveExpense(){
+async function saveExpense(){
   const t=currentTrip();
   const desc=document.getElementById('eDesc').value.trim();
   const amount=parseFloat(document.getElementById('eAmount').value);
@@ -1646,9 +1905,14 @@ function saveExpense(){
   if(!desc){alert('Please enter a description.');return;}
   if(!amount||amount<=0){alert('Please enter a valid amount.');return;}
   if(!splitBetween.length){alert('Select at least one person to split with.');return;}
-  t.expenses.push({id:uid(),desc,amount,paidBy,date,note,category,splitBetween,photo:currentPhoto});
+  const exp={id:uid(),desc,amount,paidBy,date,note,category,splitBetween,photo:currentPhoto,paidSettlements:{}};
+  t.expenses.push(exp);
   logHistory(t,'added',paidBy,desc,amount);
-  save(); closeModal('modalExpense'); renderAll();
+  closeModal('modalExpense'); renderAll();
+  await save(async()=>{
+    await api('POST','/expenses',{id:exp.id,tripId:t.id,desc,amount,paidBy,date,note,category,splitBetween,photo:currentPhoto,paidSettlements:{}});
+    await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
+  });
 }
 
 function openLightbox(e,src){ e.stopPropagation(); document.getElementById('lightboxImg').src=src; document.getElementById('lightbox').classList.remove('hidden'); }
@@ -1658,30 +1922,9 @@ document.querySelectorAll('.modal-backdrop').forEach(el=>{ el.addEventListener('
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ document.querySelectorAll('.modal-backdrop:not(.hidden)').forEach(m=>m.classList.add('hidden')); closeLightbox(); } });
 
 // ── INIT ──
-load();
-if(!state.trips.length){
-  const demo={
-    id:uid(), name:'Japan Trip',
-    startDate:'2025-04-02', endDate:'2025-04-12',
-    people:['Marcus','Elena','Dev','Sara'],
-    expenses:[
-      {id:uid(),desc:'ANA Flights',amount:3200,paidBy:'Marcus',date:'2025-04-02',note:'Round trip x4',category:'transport',splitBetween:['Marcus','Elena','Dev','Sara'],photo:null},
-      {id:uid(),desc:'Hotel Gracery – 5 nights',amount:1100,paidBy:'Elena',date:'2025-04-02',note:'Shinjuku',category:'hotel',splitBetween:['Marcus','Elena','Dev','Sara'],photo:null},
-      {id:uid(),desc:'Omakase dinner',amount:480,paidBy:'Dev',date:'2025-04-05',note:'Best meal of my life',category:'food',splitBetween:['Marcus','Elena','Dev','Sara'],photo:null},
-      {id:uid(),desc:'Shinkansen passes',amount:340,paidBy:'Sara',date:'2025-04-06',note:'7-day JR pass',category:'transport',splitBetween:['Marcus','Elena','Dev','Sara'],photo:null},
-      {id:uid(),desc:'TeamLab Planets',amount:96,paidBy:'Marcus',date:'2025-04-07',note:'',category:'activity',splitBetween:['Elena','Dev','Sara'],photo:null},
-    ],
-    history:[
-      {ts:'2025-04-02T09:00:00',who:'Marcus',action:'added',desc:'ANA Flights',amount:3200},
-      {ts:'2025-04-02T09:05:00',who:'Elena',action:'added',desc:'Hotel Gracery – 5 nights',amount:1100},
-      {ts:'2025-04-05T20:30:00',who:'Dev',action:'added',desc:'Omakase dinner',amount:480},
-      {ts:'2025-04-06T11:00:00',who:'Sara',action:'added',desc:'Shinkansen passes',amount:340},
-      {ts:'2025-04-07T14:00:00',who:'Marcus',action:'added',desc:'TeamLab Planets',amount:96},
-    ]
-  };
-  state.trips.push(demo); save();
-}
+lsLoad(); // show cached data immediately
 renderHome();
+loadFromAPI().then(()=>renderHome()); // then refresh from API
 </script>
 </body>
 </html>
