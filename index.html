@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kitty — Split the Pot</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F7F8FA;
+    --surface: #FFFFFF;
+    --surface-2: #F2F4F7;
+    --border: #E4E7EC;
+    --border-strong: #C9CDD6;
+    --ink: #111827;
+    --ink-2: #374151;
+    --ink-3: #6B7280;
+    --ink-4: #9CA3AF;
+    --green: #16A34A;
+    --green-bg: #DCFCE7;
+    --green-mid: #22C55E;
+    --red: #DC2626;
+    --red-bg: #FEE2E2;
+    --blue: #2563EB;
+    --blue-bg: #DBEAFE;
+    --amber: #D97706;
+    --amber-bg: #FEF3C7;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.05);
+    --shadow: 0 4px 12px rgba(0,0,0,0.08);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { min-height: 100vh; }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 1.5rem;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--ink);
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .logo-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+  }
+
+  /* ── BUTTONS ── */
+  .btn {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 7px 14px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .btn-primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn-primary:hover { background: var(--ink-2); }
+  .btn-outline { background: var(--surface); color: var(--ink-2); border-color: var(--border-strong); }
+  .btn-outline:hover { border-color: var(--ink-3); background: var(--bg); }
+  .btn-ghost { background: transparent; color: var(--ink-2); border-color: transparent; }
+  .btn-ghost:hover { background: var(--surface-2); }
+  .btn-green { background: var(--green); color: #fff; border-color: var(--green); }
+  .btn-green:hover { background: #15803d; }
+  .btn-sm { padding: 5px 11px; font-size: 12px; border-radius: 6px; }
+  .btn-lg { padding: 10px 20px; font-size: 14px; border-radius: 9px; }
+
+  /* ── LAYOUT ── */
+  main { max-width: 1040px; margin: 0 auto; padding: 32px 24px; }
+  .screen { display: none; }
+  .screen.active { display: block; animation: fadeIn 0.2s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+
+  /* ── HOME ── */
+  .home-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .home-heading { font-size: 22px; font-weight: 700; color: var(--ink); letter-spacing: -0.3px; }
+  .home-sub { font-size: 13px; color: var(--ink-3); margin-top: 2px; }
+
+  .trips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(288px, 1fr)); gap: 14px; }
+
+  .trip-card {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.18s;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+  }
+  .trip-card:hover { box-shadow: var(--shadow); border-color: var(--border-strong); transform: translateY(-1px); }
+
+  .trip-card-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }
+  .trip-card-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+  .trip-card-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 100px;
+    background: var(--surface-2);
+    color: var(--ink-3);
+    letter-spacing: 0.01em;
+  }
+
+  .trip-card-name { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 3px; letter-spacing: -0.2px; }
+  .trip-card-meta { font-size: 12px; color: var(--ink-3); }
+
+  .trip-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+  .trip-total-label { font-size: 11px; font-weight: 500; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+  .trip-total { font-size: 20px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+
+  .avatar-row { display: flex; }
+  .av-sm {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+    color: #fff;
+    margin-left: -6px;
+  }
+  .av-sm:first-child { margin-left: 0; }
+
+  .new-trip-card {
+    background: transparent;
+    border: 1.5px dashed var(--border-strong);
+    border-radius: var(--radius);
+    padding: 20px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    gap: 8px;
+    color: var(--ink-3);
+    transition: all 0.18s;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .new-trip-card:hover { border-color: var(--ink-3); color: var(--ink-2); background: var(--surface); }
+  .new-trip-plus {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    line-height: 1;
+    color: var(--ink-3);
+    transition: all 0.18s;
+  }
+  .new-trip-card:hover .new-trip-plus { background: var(--border); color: var(--ink-2); }
+
+  /* empty home */
+  .home-empty { text-align: center; padding: 64px 24px; }
+  .home-empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .home-empty h3 { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+  .home-empty p { font-size: 13px; color: var(--ink-3); margin-bottom: 20px; }
+
+  /* ── TRIP SCREEN ── */
+  .back-link { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 500; color: var(--ink-3); background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 16px; transition: color 0.15s; }
+  .back-link:hover { color: var(--ink); }
+
+  .trip-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  .trip-title { font-size: 26px; font-weight: 800; color: var(--ink); letter-spacing: -0.5px; }
+  .trip-meta-line { font-size: 12px; color: var(--ink-3); margin-top: 4px; }
+  .trip-header-actions { display: flex; gap: 8px; align-items: flex-start; padding-top: 4px; flex-wrap: wrap; }
+
+  /* ── SUMMARY CARDS ── */
+  .summary-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 16px 18px; box-shadow: var(--shadow-sm); }
+  .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-3); margin-bottom: 6px; }
+  .stat-value { font-size: 24px; font-weight: 700; color: var(--ink); letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
+
+  /* ── TABS ── */
+  .tabs { display: flex; gap: 2px; margin-bottom: 20px; background: var(--surface-2); border-radius: 9px; padding: 3px; width: fit-content; }
+  .tab { padding: 6px 16px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--ink-3); border: none; background: none; transition: all 0.15s; font-family: 'Inter', sans-serif; }
+  .tab:hover { color: var(--ink-2); }
+  .tab.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: var(--shadow-sm); }
+
+  /* ── SECTION TITLE ── */
+  .section-title { font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 12px; }
+
+  /* ── BALANCE CARDS ── */
+  .balance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap: 10px; }
+  .balance-card { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; display: flex; align-items: center; gap: 12px; box-shadow: var(--shadow-sm); }
+  .av { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:#fff; flex-shrink:0; }
+  .balance-name { font-weight: 600; font-size: 14px; }
+  .balance-amount { font-size: 12px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .bal-pos { color: var(--green); }
+  .bal-neg { color: var(--red); }
+  .bal-zero { color: var(--ink-3); }
+
+  /* ── SETTLEMENTS ── */
+  .settle-list { display: flex; flex-direction: column; gap: 8px; }
+  .settle-item { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow-sm); flex-wrap: wrap; position: relative; }
+  .settle-person { font-weight: 600; font-size: 13px; }
+  .settle-arrow { color: var(--ink-3); font-size: 13px; }
+  .settle-amount { font-weight: 700; font-size: 15px; color: var(--ink); margin-left: auto; font-variant-numeric: tabular-nums; }
+
+  /* ── EXPENSES ── */
+  .expense-list { display: flex; flex-direction: column; gap: 8px; }
+  .expense-item { background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px; box-shadow: var(--shadow-sm); transition: border-color 0.15s; position: relative; }
+  .expense-item:hover { border-color: var(--border-strong); }
+  .exp-icon { width:38px; height:38px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; background: var(--surface-2); }
+  .exp-body { flex:1; min-width:0; }
+  .exp-name { font-weight: 600; font-size: 14px; color: var(--ink); }
+  .exp-meta { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+  .exp-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+  .exp-tag { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 100px; }
+  .exp-split { font-size: 11px; color: var(--ink-3); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .exp-note { font-size: 11px; color: var(--ink-3); font-style: italic; margin-top: 4px; }
+  .exp-right { text-align: right; flex-shrink: 0; }
+  .exp-amount { font-size: 16px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: -0.3px; }
+  .exp-payer { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+  .exp-receipt { width:44px; height:44px; border-radius:8px; object-fit:cover; border:1.5px solid var(--border); cursor:pointer; flex-shrink:0; transition: opacity 0.15s; }
+  .exp-receipt:hover { opacity: 0.85; }
+  .exp-delete { position:absolute; top:10px; right:10px; background:none; border:none; cursor:pointer; color:var(--ink-4); font-size:13px; padding:3px; line-height:1; display:none; border-radius:4px; transition:all 0.15s; }
+  .expense-item:hover .exp-delete { display:block; }
+  .exp-delete:hover { color:var(--red); background:var(--red-bg); }
+
+  /* ── MODALS ── */
+  .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.35); backdrop-filter:blur(4px); z-index:200; display:flex; align-items:center; justify-content:center; padding:20px; animation:fadeIn 0.2s ease; }
+  .modal-backdrop.hidden { display:none; }
+  .modal { background:var(--surface); border-radius:16px; width:100%; max-width:500px; max-height:92vh; overflow-y:auto; box-shadow:0 24px 80px rgba(0,0,0,0.18); animation:slideUp 0.22s cubic-bezier(0.34,1.3,0.64,1); }
+  @keyframes slideUp { from { opacity:0; transform:translateY(14px) scale(0.97); } to { opacity:1; transform:none; } }
+  .modal-header { padding:20px 20px 0; display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+  .modal-title { font-size:18px; font-weight:700; color:var(--ink); letter-spacing:-0.3px; }
+  .modal-close { background:var(--surface-2); border:none; border-radius:50%; width:30px; height:30px; cursor:pointer; font-size:14px; display:flex; align-items:center; justify-content:center; color:var(--ink-3); transition:all 0.15s; }
+  .modal-close:hover { background:var(--border); color:var(--ink); }
+  .modal-body { padding:0 20px 20px; }
+  .modal-footer { padding:0 20px 20px; display:flex; gap:8px; justify-content:flex-end; }
+  .modal-divider { height:1px; background:var(--border); margin:0 0 16px; }
+
+  /* ── FORMS ── */
+  .field { margin-bottom:14px; }
+  .field label { display:block; font-size:12px; font-weight:600; color:var(--ink-2); margin-bottom:5px; }
+  .field input, .field select, .field textarea { width:100%; padding:8px 11px; border:1.5px solid var(--border); border-radius:8px; font-family:'Inter',sans-serif; font-size:14px; background:var(--surface); color:var(--ink); outline:none; transition:border-color 0.15s; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,99,235,0.08); }
+  .field input::placeholder, .field textarea::placeholder { color:var(--ink-4); }
+  .field textarea { resize:vertical; min-height:64px; line-height:1.5; }
+  .field-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  /* categories */
+  .cat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .cat-chip { border:1.5px solid var(--border); border-radius:8px; padding:8px 4px; text-align:center; cursor:pointer; font-size:11px; font-weight:500; color:var(--ink-2); background:var(--surface); transition:all 0.15s; display:flex; flex-direction:column; align-items:center; gap:4px; }
+  .cat-icon { font-size:18px; }
+  .cat-chip.selected { border-color:var(--ink); background:var(--ink); color:#fff; }
+  .cat-chip:hover:not(.selected) { border-color:var(--ink-3); background:var(--bg); }
+
+  /* person chips */
+  .chip-row { display:flex; flex-wrap:wrap; gap:6px; }
+  .p-chip { padding:5px 11px; border-radius:100px; border:1.5px solid var(--border); background:var(--surface); cursor:pointer; font-size:12px; font-weight:500; color:var(--ink-2); transition:all 0.15s; display:flex; align-items:center; gap:5px; user-select:none; }
+  .p-chip-dot { width:7px; height:7px; border-radius:50%; }
+  .p-chip.selected { background:var(--surface-2); }
+  .p-chip:hover { border-color:var(--ink-3); }
+
+  /* photo */
+  .photo-zone { border:1.5px dashed var(--border-strong); border-radius:8px; padding:20px; text-align:center; cursor:pointer; background:var(--bg); position:relative; transition:all 0.18s; }
+  .photo-zone:hover { border-color:var(--ink-3); background:var(--surface-2); }
+  .photo-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+  .pz-icon { font-size:24px; margin-bottom:4px; }
+  .pz-text { font-size:12px; color:var(--ink-3); }
+  .photo-preview { width:100%; height:140px; object-fit:cover; border-radius:8px; margin-top:10px; display:none; border:1.5px solid var(--border); }
+
+  /* people list */
+  .ppl-list { display:flex; flex-direction:column; gap:6px; margin-bottom:12px; }
+  .ppl-item { display:flex; align-items:center; gap:10px; background:var(--bg); border:1.5px solid var(--border); border-radius:8px; padding:9px 12px; }
+  .ppl-name { flex:1; font-size:13px; font-weight:500; }
+  .ppl-remove { background:none; border:none; cursor:pointer; color:var(--ink-4); font-size:14px; transition:color 0.15s; padding:2px; }
+  .ppl-remove:hover { color:var(--red); }
+
+  /* empty state */
+  .empty { text-align:center; padding:48px 20px; }
+  .empty-icon { font-size:32px; margin-bottom:10px; opacity:0.35; }
+  .empty h3 { font-size:15px; font-weight:600; color:var(--ink); margin-bottom:4px; }
+  .empty p { font-size:12px; color:var(--ink-3); }
+
+  /* lightbox */
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:300; display:flex; align-items:center; justify-content:center; padding:24px; cursor:zoom-out; }
+  .lightbox.hidden { display:none; }
+  .lightbox img { max-width:100%; max-height:88vh; border-radius:8px; }
+
+  /* ── TRIP PROGRESS BAR ── */
+  .trip-progress {
+    margin-bottom: 20px;
+  }
+  .trip-progress-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--ink-3);
+    margin-bottom: 5px;
+    font-weight: 500;
+  }
+  .trip-progress-labels .prog-status {
+    font-weight: 600;
+    color: var(--ink-2);
+  }
+  .trip-progress-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 100px;
+    overflow: hidden;
+  }
+  .trip-progress-fill {
+    height: 100%;
+    border-radius: 100px;
+    background: var(--green);
+    transition: width 0.4s ease;
+  }
+  .trip-progress-fill.upcoming { background: var(--ink-4); }
+  .trip-progress-fill.complete { background: var(--border-strong); }
+
+  /* ── EXPENSE DETAIL MODAL ── */
+  .detail-amount-hero {
+    text-align: center;
+    padding: 20px 0 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+  }
+  .detail-amount { font-size: 40px; font-weight: 800; letter-spacing: -1.5px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .detail-cat-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: 100px; padding: 4px 12px;
+    font-size: 12px; font-weight: 600; color: var(--ink-2);
+    margin-top: 8px;
+  }
+  .detail-row {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+  }
+  .detail-row:last-of-type { border-bottom: none; }
+  .detail-row-label { font-size: 12px; font-weight: 600; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; flex-shrink: 0; padding-top: 1px; }
+  .detail-row-value { font-size: 13px; font-weight: 500; color: var(--ink); text-align: right; }
+  .detail-split-chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+  .detail-chip { font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 100px; }
+  .detail-each { font-size: 11px; color: var(--ink-3); margin-top: 6px; text-align: center; font-variant-numeric: tabular-nums; }
+  .detail-photo { width: 100%; border-radius: 10px; margin-top: 16px; border: 1.5px solid var(--border); cursor: zoom-in; display: block; }
+  .detail-note { font-size: 13px; color: var(--ink-2); font-style: italic; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin-top: 4px; line-height: 1.5; }
+  .detail-footer-actions { display: flex; gap: 8px; justify-content: space-between; align-items: center; padding-top: 16px; border-top: 1px solid var(--border); margin-top: 4px; }
+  .btn-delete-outline { background: transparent; color: var(--red); border-color: rgba(220,38,38,0.3); }
+  .btn-delete-outline:hover { background: var(--red-bg); border-color: var(--red); }
+
+
+  /* ── HISTORY / ACTIVITY LOG ── */
+  .history-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .history-table th { text-align:left; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.07em; color:var(--ink-3); padding:0 12px 8px; border-bottom:1.5px solid var(--border); }
+  .history-table th:last-child { text-align:right; }
+  .history-table td { padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:middle; color:var(--ink-2); }
+  .history-table tr:last-child td { border-bottom:none; }
+  .history-table tr:hover td { background:var(--surface-2); }
+  .hist-who { display:flex; align-items:center; gap:7px; }
+  .hist-action { display:inline-block; font-size:11px; font-weight:600; padding:2px 7px; border-radius:100px; }
+  .hist-action.added   { background:var(--green-bg); color:var(--green); }
+  .hist-action.edited  { background:var(--blue-bg); color:var(--blue); }
+  .hist-action.deleted { background:var(--red-bg); color:var(--red); }
+  .hist-action.settled { background:var(--green-bg); color:var(--green); }
+  .hist-desc { font-weight:500; color:var(--ink); }
+  .hist-amount { font-weight:600; font-variant-numeric:tabular-nums; text-align:right; }
+  .hist-time { font-size:11px; color:var(--ink-4); white-space:nowrap; }
+  .hist-change { font-size:11px; color:var(--ink-3); margin-top:2px; }
+  .history-wrap { background:var(--surface); border:1.5px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; box-shadow:var(--shadow-sm); }
+  .history-empty { text-align:center; padding:40px 20px; color:var(--ink-3); font-size:13px; }
+
+
+  /* ── SETTLE UP BUTTON ── */
+  .settle-item.is-settled {
+    opacity: 0.5;
+  }
+  .settle-item.is-settled .settle-amount {
+    text-decoration: line-through;
+    color: var(--ink-3);
+  }
+  .settle-btn {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 100px;
+    border: 1.5px solid var(--green);
+    background: transparent;
+    color: var(--green);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .settle-btn:hover { background: var(--green); color: #fff; }
+  .settle-btn.settled {
+    background: var(--green-bg);
+    color: var(--green);
+    border-color: transparent;
+    cursor: default;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .settle-btn.settled:hover { background: var(--green-bg); color: var(--green); }
+
+
+  /* ── TRIP SETTINGS / COVER ── */
+  .trip-cover {
+    width: 100%;
+    height: 160px;
+    border-radius: var(--radius);
+    object-fit: cover;
+    display: block;
+    margin-bottom: 20px;
+    border: 1.5px solid var(--border);
+  }
+  .trip-header-icon {
+    font-size: 28px;
+    line-height: 1;
+    margin-right: 10px;
+    cursor: default;
+    flex-shrink: 0;
+  }
+  .trip-title-row { display: flex; align-items: center; }
+  .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .icon-opt {
+    font-size: 22px;
+    width: 40px; height: 40px;
+    border-radius: 8px;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .icon-opt:hover { border-color: var(--ink-3); background: var(--bg); transform: scale(1.1); }
+  .icon-opt.selected { border-color: var(--ink); background: var(--ink); font-size: 18px; }
+  .settings-section-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--ink-3); margin-bottom: 8px;
+  }
+  .cover-preview-wrap { position: relative; margin-bottom: 4px; }
+  .cover-preview-wrap img {
+    width: 100%; height: 120px; object-fit: cover;
+    border-radius: 8px; border: 1.5px solid var(--border); display: block;
+  }
+  .cover-remove-btn {
+    position: absolute; top: 6px; right: 6px;
+    background: rgba(0,0,0,0.55); border: none; border-radius: 50%;
+    width: 24px; height: 24px; cursor: pointer; color: #fff;
+    font-size: 12px; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  .cover-remove-btn:hover { background: rgba(220,38,38,0.8); }
+  .btn-settings {
+    background: var(--surface); color: var(--ink-2);
+    border: 1.5px solid var(--border);
+    padding: 6px 10px; border-radius: 7px;
+    font-size: 13px; cursor: pointer; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: 'Inter', sans-serif; font-weight: 500;
+  }
+  .btn-settings:hover { border-color: var(--ink-3); background: var(--bg); }
+
+
+  /* ── PER-EXPENSE SETTLEMENT ── */
+  .exp-settle-section {
+    margin-top: 4px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+  .exp-settle-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--ink-3); margin-bottom: 10px;
+  }
+  .exp-settle-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .exp-settle-row:last-child { border-bottom: none; }
+  .exp-settle-name { flex: 1; font-size: 13px; font-weight: 500; color: var(--ink); }
+  .exp-settle-amount { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink-3); margin-right: 4px; }
+  .exp-settle-btn {
+    font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600;
+    padding: 4px 10px; border-radius: 100px; cursor: pointer; transition: all 0.15s;
+    white-space: nowrap; border: 1.5px solid var(--green); background: transparent; color: var(--green);
+  }
+  .exp-settle-btn:hover { background: var(--green); color: #fff; }
+  .exp-settle-btn.paid {
+    background: var(--green-bg); color: var(--green); border-color: transparent;
+  }
+  .exp-settle-btn.paid:hover { background: #bbf7d0; }
+  .exp-settle-row.is-paid .exp-settle-name { color: var(--ink-3); text-decoration: line-through; }
+  .exp-settle-row.is-paid .exp-settle-amount { text-decoration: line-through; }
+  /* small settled badge on ledger item */
+  .exp-settled-badge {
+    font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 100px;
+    background: var(--green-bg); color: var(--green); margin-left: 4px; vertical-align: middle;
+  }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width:5px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border-strong); border-radius:100px; }
+
+  @media (max-width:580px) {
+    main { padding:20px 14px; }
+    .field-row { grid-template-columns:1fr; }
+    .cat-grid { grid-template-columns:repeat(4,1fr); }
+    header { padding:0 14px; }
+    .trip-header { flex-direction:column; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-dot"></div>
+      Kitty
+    </div>
+    <div id="headerActions">
+      <button class="btn btn-primary btn-sm" onclick="showNewTripModal()">+ New Trip</button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- HOME -->
+    <div class="screen active" id="screenHome">
+      <div class="home-top">
+        <div>
+          <div class="home-heading">Your Trips</div>
+          <div class="home-sub">Track shared expenses, settle up with the group.</div>
+        </div>
+        <button class="btn btn-primary" onclick="showNewTripModal()">+ New Trip</button>
+      </div>
+      <div class="trips-grid" id="tripsGrid"></div>
+    </div>
+
+    <!-- TRIP -->
+    <div class="screen" id="screenTrip">
+      <button class="back-link" onclick="goHome()">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8l4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        All Trips
+      </button>
+      <img id="tripCoverPhoto" class="trip-cover" style="display:none" alt="Trip cover">
+      <div class="trip-header">
+        <div>
+          <div class="trip-title-row"><span id="tripTitleIcon" class="trip-header-icon"></span><div class="trip-title" id="tripTitle"></div></div>
+          <div class="trip-meta-line" id="tripMeta"></div>
+        </div>
+        <div class="trip-header-actions">
+          <button class="btn-settings" onclick="showTripSettings()" title="Trip settings">⚙ Settings</button>
+          <button class="btn btn-outline btn-sm" onclick="showPeopleModal()">People</button>
+          <button class="btn btn-primary" onclick="showExpenseModal()">+ Add Expense</button>
+        </div>
+      </div>
+
+      <div class="trip-progress" id="tripProgress" style="display:none">
+        <div class="trip-progress-labels">
+          <span id="progStart"></span>
+          <span class="prog-status" id="progStatus"></span>
+          <span id="progEnd"></span>
+        </div>
+        <div class="trip-progress-track">
+          <div class="trip-progress-fill" id="progFill"></div>
+        </div>
+      </div>
+
+      <div class="summary-row">
+        <div class="stat-card"><div class="stat-label">Total Spent</div><div class="stat-value" id="sumTotal">$0</div></div>
+        <div class="stat-card"><div class="stat-label">Expenses</div><div class="stat-value" id="sumCount">0</div></div>
+        <div class="stat-card"><div class="stat-label">People</div><div class="stat-value" id="sumPeople">0</div></div>
+        <div class="stat-card"><div class="stat-label">Per Person</div><div class="stat-value" id="sumPer">$0</div></div>
+        <div class="stat-card"><div class="stat-label" id="sumSettledLabel">Settled</div><div class="stat-value" id="sumSettled" style="color:var(--green)">—</div></div>
+      </div>
+
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('ledger',this)">Ledger</button>
+        <button class="tab" onclick="switchTab('balances',this)">Balances</button>
+        <button class="tab" onclick="switchTab('settle',this)">Settle Up</button>
+        <button class="tab" onclick="switchTab('history',this)">History</button>
+      </div>
+
+      <div id="tabLedger"><div class="expense-list" id="expenseList"></div></div>
+      <div id="tabBalances" style="display:none">
+        <div class="section-title">Who's up, who's down</div>
+        <div class="balance-grid" id="balanceGrid"></div>
+      </div>
+      <div id="tabSettle" style="display:none">
+        <div class="section-title">Suggested payments</div>
+        <div class="settle-list" id="settleList"></div>
+      </div>
+      <div id="tabHistory" style="display:none">
+        <div class="section-title">Activity log</div>
+        <div class="history-wrap"><div id="historyContainer"></div></div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODAL: NEW TRIP -->
+<div class="modal-backdrop hidden" id="modalNewTrip">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">New Trip</div>
+      <button class="modal-close" onclick="closeModal('modalNewTrip')">✕</button>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="modal-body">
+      <div class="field"><label>Trip Name</label><input type="text" id="nTripName" placeholder="Tokyo 2025, Road Trip, Ski Weekend…"></div>
+      <div class="field-row">
+        <div class="field"><label>Start Date</label><input type="date" id="nTripStart"></div>
+        <div class="field"><label>End Date</label><input type="date" id="nTripEnd"></div>
+      </div>
+      <div class="field"><label>Add People <span style="color:var(--ink-3);font-weight:400">(comma separated)</span></label><input type="text" id="nTripPeople" placeholder="Alice, Bob, Charlie…"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalNewTrip')">Cancel</button>
+      <button class="btn btn-primary" onclick="createTrip()">Create Trip</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: PEOPLE -->
+<div class="modal-backdrop hidden" id="modalPeople">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">People</div>
+      <button class="modal-close" onclick="closeModal('modalPeople')">✕</button>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="modal-body">
+      <div class="ppl-list" id="pplList"></div>
+      <div class="field-row" style="align-items:flex-end">
+        <div class="field" style="margin:0"><label>Add Person</label><input type="text" id="addPersonName" placeholder="Name…" onkeydown="if(event.key==='Enter')addPerson()"></div>
+        <button class="btn btn-primary" onclick="addPerson()" style="height:38px">Add</button>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal('modalPeople')">Done</button></div>
+  </div>
+</div>
+
+<!-- MODAL: EXPENSE -->
+<div class="modal-backdrop hidden" id="modalExpense">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Add Expense</div>
+      <button class="modal-close" onclick="closeModal('modalExpense')">✕</button>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Category</label>
+        <div class="cat-grid" id="catGrid">
+          <div class="cat-chip selected" data-cat="food" onclick="selCat(this)"><span class="cat-icon">🍽️</span>Food</div>
+          <div class="cat-chip" data-cat="drinks" onclick="selCat(this)"><span class="cat-icon">🥂</span>Drinks</div>
+          <div class="cat-chip" data-cat="transport" onclick="selCat(this)"><span class="cat-icon">🚗</span>Transport</div>
+          <div class="cat-chip" data-cat="hotel" onclick="selCat(this)"><span class="cat-icon">🏨</span>Hotel</div>
+          <div class="cat-chip" data-cat="activity" onclick="selCat(this)"><span class="cat-icon">🎟️</span>Activity</div>
+          <div class="cat-chip" data-cat="groceries" onclick="selCat(this)"><span class="cat-icon">🛒</span>Groceries</div>
+          <div class="cat-chip" data-cat="fuel" onclick="selCat(this)"><span class="cat-icon">⛽</span>Fuel</div>
+          <div class="cat-chip" data-cat="other" onclick="selCat(this)"><span class="cat-icon">📦</span>Other</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Description</label><input type="text" id="eDesc" placeholder="e.g. Dinner at Nobu"></div>
+        <div class="field"><label>Amount ($)</label><input type="number" id="eAmount" placeholder="0.00" min="0" step="0.01"></div>
+      </div>
+      <div class="field"><label>Paid by</label><select id="ePaidBy"></select></div>
+      <div class="field">
+        <label>Split between</label>
+        <div class="chip-row" id="eSplit"></div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="btn btn-ghost btn-sm" onclick="splitAll()">Select all</button>
+          <button class="btn btn-ghost btn-sm" onclick="splitNone()">Clear</button>
+        </div>
+      </div>
+      <div class="field"><label>Date</label><input type="date" id="eDate"></div>
+      <div class="field"><label>Note <span style="color:var(--ink-3);font-weight:400">(optional)</span></label><textarea id="eNote" placeholder="Any details…" rows="2"></textarea></div>
+      <div class="field">
+        <label>Receipt / Photo <span style="color:var(--ink-3);font-weight:400">(optional)</span></label>
+        <div class="photo-zone" onclick="if(event.target===this||event.target.classList.contains('pz-icon')||event.target.classList.contains('pz-text')){document.getElementById('photoInput').click()}">
+          <input type="file" id="photoInput" accept="image/*" capture="environment" onchange="handlePhoto(event)" onclick="event.stopPropagation()">
+          <div class="pz-icon" id="pzIcon">📷</div>
+          <div class="pz-text" id="pzText">Tap to take a photo or upload</div>
+        </div>
+        <img class="photo-preview" id="photoPreview" alt="Receipt preview">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalExpense')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveExpense()">Add Expense</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EXPENSE DETAIL -->
+<div class="modal-backdrop hidden" id="modalExpenseDetail">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="detailTitle"></div>
+      <button class="modal-close" onclick="closeModal('modalExpenseDetail')">✕</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+  </div>
+</div>
+
+<!-- MODAL: EDIT EXPENSE -->
+<div class="modal-backdrop hidden" id="modalEditExpense">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Edit Expense</div>
+      <button class="modal-close" onclick="closeModal('modalEditExpense')">✕</button>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Edited by</label>
+        <select id="editWho"></select>
+      </div>
+      <div class="field">
+        <label>Category</label>
+        <div class="cat-grid" id="editCatGrid">
+          <div class="cat-chip" data-cat="food" onclick="selEditCat(this)"><span class="cat-icon">🍽️</span>Food</div>
+          <div class="cat-chip" data-cat="drinks" onclick="selEditCat(this)"><span class="cat-icon">🥂</span>Drinks</div>
+          <div class="cat-chip" data-cat="transport" onclick="selEditCat(this)"><span class="cat-icon">🚗</span>Transport</div>
+          <div class="cat-chip" data-cat="hotel" onclick="selEditCat(this)"><span class="cat-icon">🏨</span>Hotel</div>
+          <div class="cat-chip" data-cat="activity" onclick="selEditCat(this)"><span class="cat-icon">🎟️</span>Activity</div>
+          <div class="cat-chip" data-cat="groceries" onclick="selEditCat(this)"><span class="cat-icon">🛒</span>Groceries</div>
+          <div class="cat-chip" data-cat="fuel" onclick="selEditCat(this)"><span class="cat-icon">⛽</span>Fuel</div>
+          <div class="cat-chip" data-cat="other" onclick="selEditCat(this)"><span class="cat-icon">📦</span>Other</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Description</label><input type="text" id="editDesc"></div>
+        <div class="field"><label>Amount ($)</label><input type="number" id="editAmount" min="0" step="0.01"></div>
+      </div>
+      <div class="field"><label>Paid by</label><select id="editPaidBy"></select></div>
+      <div class="field">
+        <label>Split between</label>
+        <div class="chip-row" id="editSplit"></div>
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="btn btn-ghost btn-sm" onclick="editSplitAll()">Select all</button>
+          <button class="btn btn-ghost btn-sm" onclick="editSplitNone()">Clear</button>
+        </div>
+      </div>
+      <div class="field"><label>Date</label><input type="date" id="editDate"></div>
+      <div class="field"><label>Note <span style="color:var(--ink-3);font-weight:400">(optional)</span></label><textarea id="editNote" rows="2"></textarea></div>
+      <div class="field">
+        <label>Receipt / Photo <span style="color:var(--ink-3);font-weight:400">(optional)</span></label>
+        <div class="photo-zone" onclick="if(event.target===this||event.target.classList.contains('pz-icon')||event.target.classList.contains('pz-text')){document.getElementById('editPhotoInput').click()}">
+          <input type="file" id="editPhotoInput" accept="image/*" capture="environment" onchange="handleEditPhoto(event)" onclick="event.stopPropagation()">
+          <div class="pz-icon" id="editPzIcon">📷</div>
+          <div class="pz-text" id="editPzText">Tap to replace photo</div>
+        </div>
+        <img class="photo-preview" id="editPhotoPreview" alt="Receipt preview">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalEditExpense')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditExpense()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CONFIRM -->
+<div class="modal-backdrop hidden" id="modalConfirm">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <div class="modal-title" id="confirmTitle">Are you sure?</div>
+    </div>
+    <div class="modal-body" style="padding-top:8px">
+      <p id="confirmMsg" style="font-size:14px;color:var(--ink-2);line-height:1.6"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="confirmCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="confirmOkBtn">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: TRIP SETTINGS -->
+<div class="modal-backdrop hidden" id="modalTripSettings">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-header">
+      <div class="modal-title">Trip Settings</div>
+      <button class="modal-close" onclick="closeModal('modalTripSettings')">✕</button>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="modal-body">
+
+      <div style="margin-bottom:18px">
+        <div class="settings-section-label">Trip Name</div>
+        <div class="field" style="margin:0"><input type="text" id="stName" placeholder="Trip name"></div>
+      </div>
+
+      <div class="field-row" style="margin-bottom:18px">
+        <div>
+          <div class="settings-section-label">Start Date</div>
+          <input type="date" id="stStart" style="width:100%;padding:8px 11px;border:1.5px solid var(--border);border-radius:8px;font-family:Inter,sans-serif;font-size:14px;background:var(--surface);color:var(--ink);outline:none">
+        </div>
+        <div>
+          <div class="settings-section-label">End Date</div>
+          <input type="date" id="stEnd" style="width:100%;padding:8px 11px;border:1.5px solid var(--border);border-radius:8px;font-family:Inter,sans-serif;font-size:14px;background:var(--surface);color:var(--ink);outline:none">
+        </div>
+      </div>
+
+      <div style="margin-bottom:18px">
+        <div class="settings-section-label">Trip Icon</div>
+        <div class="icon-grid" id="iconGrid"><div class="icon-opt" data-icon="✈️" onclick="selectTripIcon(this)">✈️</div><div class="icon-opt" data-icon="🏖️" onclick="selectTripIcon(this)">🏖️</div><div class="icon-opt" data-icon="⛷️" onclick="selectTripIcon(this)">⛷️</div><div class="icon-opt" data-icon="🗺️" onclick="selectTripIcon(this)">🗺️</div><div class="icon-opt" data-icon="🏕️" onclick="selectTripIcon(this)">🏕️</div><div class="icon-opt" data-icon="🎉" onclick="selectTripIcon(this)">🎉</div><div class="icon-opt" data-icon="🍜" onclick="selectTripIcon(this)">🍜</div><div class="icon-opt" data-icon="🚂" onclick="selectTripIcon(this)">🚂</div><div class="icon-opt" data-icon="🚢" onclick="selectTripIcon(this)">🚢</div><div class="icon-opt" data-icon="🏔️" onclick="selectTripIcon(this)">🏔️</div><div class="icon-opt" data-icon="🌴" onclick="selectTripIcon(this)">🌴</div><div class="icon-opt" data-icon="🎒" onclick="selectTripIcon(this)">🎒</div><div class="icon-opt" data-icon="🏛️" onclick="selectTripIcon(this)">🏛️</div><div class="icon-opt" data-icon="🍣" onclick="selectTripIcon(this)">🍣</div><div class="icon-opt" data-icon="🎸" onclick="selectTripIcon(this)">🎸</div><div class="icon-opt" data-icon="🚵" onclick="selectTripIcon(this)">🚵</div><div class="icon-opt" data-icon="🏄" onclick="selectTripIcon(this)">🏄</div><div class="icon-opt" data-icon="🎿" onclick="selectTripIcon(this)">🎿</div><div class="icon-opt" data-icon="🌅" onclick="selectTripIcon(this)">🌅</div><div class="icon-opt" data-icon="🏝️" onclick="selectTripIcon(this)">🏝️</div><div class="icon-opt" data-icon="🚁" onclick="selectTripIcon(this)">🚁</div><div class="icon-opt" data-icon="🌋" onclick="selectTripIcon(this)">🌋</div><div class="icon-opt" data-icon="🍷" onclick="selectTripIcon(this)">🍷</div><div class="icon-opt" data-icon="🎭" onclick="selectTripIcon(this)">🎭</div><div class="icon-opt" data-icon="🎪" onclick="selectTripIcon(this)">🎪</div><div class="icon-opt" data-icon="🏺" onclick="selectTripIcon(this)">🏺</div><div class="icon-opt" data-icon="🦁" onclick="selectTripIcon(this)">🦁</div><div class="icon-opt" data-icon="🐠" onclick="selectTripIcon(this)">🐠</div></div>
+      </div>
+
+      <div style="margin-bottom:4px">
+        <div class="settings-section-label">Cover Photo</div>
+        <div id="coverPreviewWrap" class="cover-preview-wrap" style="display:none">
+          <img id="coverPreviewImg" src="" alt="Cover">
+          <button class="cover-remove-btn" onclick="removeCoverPhoto()">✕</button>
+        </div>
+        <div class="photo-zone" id="coverUploadZone" onclick="if(event.target===this||event.target.classList.contains('pz-icon')||event.target.classList.contains('pz-text')){document.getElementById('coverPhotoInput').click()}">
+          <input type="file" id="coverPhotoInput" accept="image/*" capture="environment" onchange="handleCoverPhoto(event)" onclick="event.stopPropagation()">
+          <div class="pz-icon">🖼️</div>
+          <div class="pz-text">Tap to upload a cover photo</div>
+        </div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalTripSettings')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveTripSettings()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lightbox hidden" id="lightbox" onclick="closeLightbox()">
+  <img id="lightboxImg" src="" alt="Receipt">
+</div>
+
+<script>
+const COLORS = ['#3B82F6','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4','#84CC16'];
+const TRIP_ICONS = ['✈️','🏖️','⛷️','🗺️','🏕️','🎉','🍜','🚂'];
+const CATS = { food:'🍽️', drinks:'🥂', transport:'🚗', hotel:'🏨', activity:'🎟️', groceries:'🛒', fuel:'⛽', other:'📦' };
+
+let state = { trips:[], currentTripId:null };
+let currentPhoto = null;
+
+function save() { try { localStorage.setItem('kitty_v2', JSON.stringify(state)); } catch(e){} }
+function load() { try { const d=localStorage.getItem('kitty_v2'); if(d) state=JSON.parse(d); } catch(e){} }
+function uid() { return Math.random().toString(36).slice(2,9)+Date.now().toString(36); }
+function fmt(n) { const a=Math.abs(n); return '$'+(a<0.005?'0.00':a.toFixed(2)); }
+function initials(n) { return n.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function today() { return new Date().toISOString().slice(0,10); }
+function pColor(name,people) { return COLORS[Math.max(people.indexOf(name),0)%COLORS.length]; }
+function currentTrip() { return state.trips.find(t=>t.id===state.currentTripId); }
+function tripIcon(i) { return TRIP_ICONS[i%TRIP_ICONS.length]; }
+
+// ── NAVIGATION ──
+function goHome() {
+  state.currentTripId=null;
+  document.getElementById('screenTrip').classList.remove('active');
+  document.getElementById('screenHome').classList.add('active');
+  document.getElementById('headerActions').innerHTML=`<button class="btn btn-primary btn-sm" onclick="showNewTripModal()">+ New Trip</button>`;
+  renderHome();
+}
+
+function renderHome() {
+  const grid=document.getElementById('tripsGrid');
+  grid.innerHTML='';
+  if (!state.trips.length) {
+    grid.innerHTML=`<div class="home-empty" style="grid-column:1/-1"><div class="home-empty-icon">🌍</div><h3>No trips yet</h3><p>Create your first trip to start tracking shared expenses.</p><button class="btn btn-primary btn-lg" onclick="showNewTripModal()">+ Create a Trip</button></div>`;
+    return;
+  }
+  state.trips.forEach((trip,i) => {
+    const total=trip.expenses.reduce((s,e)=>s+e.amount,0);
+    const card=document.createElement('div');
+    card.className='trip-card';
+    const avatars=trip.people.slice(0,5).map(p=>`<div class="av-sm" style="background:${pColor(p,trip.people)}">${initials(p)}</div>`).join('');
+    card.innerHTML=`
+      <div class="trip-card-header">
+        <div class="trip-card-icon" style="background:${pColor(trip.people[0]||'A',trip.people||['A'])}18">${trip.icon||tripIcon(i)}</div>
+        <div class="trip-card-badge">${trip.people.length} people</div>
+      </div>
+      <div class="trip-card-name">${esc(trip.name)}</div>
+      <div class="trip-card-meta">${trip.startDate||''}${trip.endDate?' – '+trip.endDate:''}</div>
+      <div class="trip-card-footer">
+        <div>
+          <div class="trip-total-label">Total</div>
+          <div class="trip-total">${fmt(total)}</div>
+        </div>
+        <div class="avatar-row">${avatars}</div>
+      </div>`;
+    card.onclick=()=>openTrip(trip.id);
+    grid.appendChild(card);
+  });
+  const nc=document.createElement('div');
+  nc.className='new-trip-card';
+  nc.innerHTML=`<div class="new-trip-plus">+</div><span>New Trip</span>`;
+  nc.onclick=showNewTripModal;
+  grid.appendChild(nc);
+}
+
+function openTrip(id) {
+  state.currentTripId=id;
+  document.getElementById('screenHome').classList.remove('active');
+  document.getElementById('screenTrip').classList.add('active');
+  document.getElementById('headerActions').innerHTML=`
+    <button class="btn btn-outline btn-sm" onclick="showPeopleModal()">People</button>
+    <button class="btn btn-primary" onclick="showExpenseModal()">+ Add Expense</button>`;
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===0));
+  document.getElementById('tabLedger').style.display='';
+  document.getElementById('tabBalances').style.display='none';
+  document.getElementById('tabSettle').style.display='none';
+  document.getElementById('tabHistory').style.display='none';
+  renderAll();
+}
+
+function renderAll() {
+  const t=currentTrip(); if(!t) return;
+  const total=t.expenses.reduce((s,e)=>s+e.amount,0);
+  // settled summary
+  const net=computeNet();
+  const allDebts=[];
+  const cTmp=[],dTmp=[];
+  Object.entries(net).forEach(([p,n])=>{ if(n>0.005) cTmp.push({p,n}); else if(n<-0.005) dTmp.push({p,n:-n}); });
+  cTmp.sort((a,b)=>b.n-a.n); dTmp.sort((a,b)=>b.n-a.n);
+  const cc=cTmp.map(x=>({...x})),dd=dTmp.map(x=>({...x}));
+  let ci2=0,di2=0;
+  while(ci2<cc.length&&di2<dd.length){
+    const a=Math.min(cc[ci2].n,dd[di2].n);
+    if(a>0.005) allDebts.push({from:dd[di2].p,to:cc[ci2].p,amt:a});
+    cc[ci2].n-=a; dd[di2].n-=a;
+    if(cc[ci2].n<0.005)ci2++; if(dd[di2].n<0.005)di2++;
+  }
+  const totalDebts=allDebts.length;
+  const settledCount=allDebts.filter(s=>{
+    const sid=`settle-${s.from.replace(/\s+/g,'_')}-${s.to.replace(/\s+/g,'_')}`;
+    return (t.settledPayments||[]).some(p=>p.id===sid);
+  }).length;
+  document.getElementById('sumTotal').textContent=fmt(total);
+  document.getElementById('sumCount').textContent=t.expenses.length;
+  document.getElementById('sumPeople').textContent=t.people.length;
+  document.getElementById('sumPer').textContent=t.people.length?fmt(total/t.people.length):'$0';
+  const settleCard=document.getElementById('sumSettled');
+  if(settleCard) {
+    settleCard.textContent = totalDebts===0 ? '—' : `${settledCount}/${totalDebts}`;
+    const settleLabel=document.getElementById('sumSettledLabel');
+    if(settleLabel) settleLabel.textContent = totalDebts===0||settledCount===totalDebts ? 'All settled' : 'Settled';
+  }
+  document.getElementById('tripTitle').textContent=t.name;
+  document.getElementById('tripMeta').textContent=`${t.startDate||''}${t.endDate?' – '+t.endDate:''} · ${t.people.length} person${t.people.length!==1?'s':''}`;
+  const iconEl=document.getElementById('tripTitleIcon');
+  if(iconEl) iconEl.textContent=t.icon||'';
+  const coverEl=document.getElementById('tripCoverPhoto');
+  if(coverEl){ if(t.coverPhoto){ coverEl.src=t.coverPhoto; coverEl.style.display='block'; } else { coverEl.style.display='none'; } }
+  renderProgress(); renderExpenses(); renderBalances(); renderSettlements(); renderHistory();
+}
+
+function renderProgress() {
+  const t=currentTrip();
+  const bar=document.getElementById('tripProgress');
+  if (!t.startDate || !t.endDate) { bar.style.display='none'; return; }
+  bar.style.display='';
+  const start=new Date(t.startDate+'T00:00:00');
+  const end=new Date(t.endDate+'T00:00:00');
+  const now=new Date(); now.setHours(0,0,0,0);
+  const total=end-start;
+  const elapsed=now-start;
+  const pct=Math.max(0,Math.min(100,total>0?(elapsed/total*100):0));
+  const fill=document.getElementById('progFill');
+  fill.style.width=pct+'%';
+  const fmtDate=d=>d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  document.getElementById('progStart').textContent=fmtDate(start);
+  document.getElementById('progEnd').textContent=fmtDate(end);
+  const status=document.getElementById('progStatus');
+  if (now < start) {
+    const days=Math.round((start-now)/86400000);
+    status.textContent=`starts in ${days} day${days!==1?'s':''}`;
+    fill.className='trip-progress-fill upcoming';
+  } else if (now > end) {
+    status.textContent='trip complete';
+    fill.className='trip-progress-fill complete';
+  } else {
+    const daysLeft=Math.round((end-now)/86400000);
+    status.textContent=daysLeft===0?'last day':`${daysLeft} day${daysLeft!==1?'s':''} left`;
+    fill.className='trip-progress-fill';
+  }
+}
+
+function renderExpenses() {
+  const t=currentTrip();
+  const list=document.getElementById('expenseList');
+  if (!t.expenses.length) {
+    list.innerHTML=`<div class="empty"><div class="empty-icon">🧾</div><h3>No expenses yet</h3><p>Add your first expense to get started.</p></div>`;
+    return;
+  }
+  list.innerHTML='';
+  [...t.expenses].reverse().forEach(exp=>{
+    const div=document.createElement('div'); div.className='expense-item'; div.style.cursor='pointer';
+    const tags=exp.splitBetween.map(p=>`<span class="exp-tag" style="background:${pColor(p,t.people)}18;color:${pColor(p,t.people)}">${esc(p)}</span>`).join('');
+    const each=exp.splitBetween.length?fmt(exp.amount/exp.splitBetween.length):'-';
+    div.innerHTML=`
+      <div class="exp-icon">${CATS[exp.category]||'📦'}</div>
+      <div class="exp-body">
+        <div class="exp-name">${esc(exp.desc)}</div>
+        <div class="exp-meta">${exp.date?exp.date+' · ':''}${exp.category}</div>
+        <div class="exp-tags">${tags}</div>
+        ${exp.note?`<div class="exp-note">${esc(exp.note)}</div>`:''}
+        <div class="exp-split exp-split-${exp.id}">÷ ${exp.splitBetween.length} people = ${each} each</div>
+      </div>
+      ${exp.photo?`<img class="exp-receipt" src="${exp.photo}" onclick="openLightbox(event,this.src)">` :''}
+      <div class="exp-right">
+        <div class="exp-amount">${fmt(exp.amount)}</div>
+        <div class="exp-payer">paid by ${esc(exp.paidBy)}</div>
+      </div>
+      <button class="exp-delete" onclick="event.stopPropagation();delExp('${exp.id}')" title="Delete">✕</button>`;
+    div.addEventListener('click', e => { if(!e.target.closest('.exp-delete')&&!e.target.closest('.exp-receipt')) showExpenseDetail(exp.id); });
+    list.appendChild(div);
+    // Update split badge now that div is in DOM
+    const splitEl = div.querySelector('.exp-split-'+exp.id);
+    if(splitEl) {
+      const debtors = exp.splitBetween.filter(p=>p!==exp.paidBy);
+      const settledCount = debtors.filter(p=>exp.paidSettlements&&exp.paidSettlements[p]).length;
+      const badgeHtml = settledCount>0 ? ' <span class="exp-settled-badge">'+settledCount+'/'+debtors.length+' paid back</span>' : '';
+      splitEl.innerHTML = '÷ '+exp.splitBetween.length+' people = '+each+' each'+badgeHtml;
+    }
+  });
+}
+
+function showExpenseDetail(id) {
+  const t=currentTrip();
+  const exp=t.expenses.find(e=>e.id===id); if(!exp) return;
+  if(!exp.paidSettlements) exp.paidSettlements={};
+  const share=exp.splitBetween.length ? exp.amount/exp.splitBetween.length : 0;
+  const each=share>0?fmt(share):'-';
+  const fmtDateNice=s=>{ if(!s)return'—'; const d=new Date(s+'T00:00:00'); return d.toLocaleDateString('en-US',{weekday:'short',year:'numeric',month:'long',day:'numeric'}); };
+
+  // Build body via DOM to avoid inline handler issues
+  const body=document.getElementById('detailBody');
+  body.innerHTML='';
+
+  // Amount hero
+  const hero=document.createElement('div'); hero.className='detail-amount-hero';
+  hero.innerHTML=`<div class="detail-amount">${fmt(exp.amount)}</div><div><span class="detail-cat-badge">${CATS[exp.category]||'📦'} ${exp.category}</span></div>`;
+  body.appendChild(hero);
+
+  // Date row
+  const dateRow=document.createElement('div'); dateRow.className='detail-row';
+  dateRow.innerHTML=`<div class="detail-row-label">Date</div><div class="detail-row-value">${fmtDateNice(exp.date)}</div>`;
+  body.appendChild(dateRow);
+
+  // Paid by row
+  const paidRow=document.createElement('div'); paidRow.className='detail-row';
+  paidRow.innerHTML=`<div class="detail-row-label">Paid by</div>
+    <div class="detail-row-value" style="display:flex;align-items:center;gap:7px">
+      <div style="width:22px;height:22px;border-radius:50%;background:${pColor(exp.paidBy,t.people)};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff">${initials(exp.paidBy)}</div>
+      ${esc(exp.paidBy)}
+    </div>`;
+  body.appendChild(paidRow);
+
+  // Each owes row
+  const eachRow=document.createElement('div'); eachRow.className='detail-row';
+  eachRow.innerHTML=`<div class="detail-row-label">Each owes</div><div class="detail-row-value" style="font-weight:700">${each}</div>`;
+  body.appendChild(eachRow);
+
+  // Note
+  if(exp.note){
+    const noteRow=document.createElement('div'); noteRow.className='detail-row'; noteRow.style.flexDirection='column'; noteRow.style.gap='6px';
+    noteRow.innerHTML=`<div class="detail-row-label">Note</div><div class="detail-note">${esc(exp.note)}</div>`;
+    body.appendChild(noteRow);
+  }
+
+  // Photo
+  if(exp.photo){
+    const img=document.createElement('img'); img.className='detail-photo'; img.src=exp.photo; img.alt='Receipt';
+    img.addEventListener('click', e=>openLightbox(e,exp.photo));
+    body.appendChild(img);
+  }
+
+  // Per-person settlement section (exclude the payer — they already paid)
+  const debtors=exp.splitBetween.filter(p=>p!==exp.paidBy);
+  if(debtors.length>0){
+    const sec=document.createElement('div'); sec.className='exp-settle-section';
+    const title=document.createElement('div'); title.className='exp-settle-title';
+    title.textContent="Who's paid back";
+    sec.appendChild(title);
+
+    debtors.forEach(person=>{
+      const isPaid=!!(exp.paidSettlements&&exp.paidSettlements[person]);
+      const row=document.createElement('div');
+      row.className='exp-settle-row'+(isPaid?' is-paid':'');
+
+      const av=document.createElement('div');
+      av.style.cssText=`width:22px;height:22px;border-radius:50%;background:${pColor(person,t.people)};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0`;
+      av.textContent=initials(person);
+
+      const name=document.createElement('div'); name.className='exp-settle-name'; name.textContent=person;
+      const amt=document.createElement('div'); amt.className='exp-settle-amount'; amt.textContent=each;
+
+      const btn=document.createElement('button');
+      btn.className='exp-settle-btn'+(isPaid?' paid':'');
+      btn.textContent=isPaid?'✓ Paid':'Settle Up';
+
+      btn.addEventListener('click', ()=>{
+        if(isPaid){
+          customConfirm('Mark as Unpaid', `Mark ${person}'s share (${each}) as unpaid?`, ()=>{
+            delete exp.paidSettlements[person];
+            logHistory(t,'edited',person,exp.desc,share,`${person}'s share marked unpaid`);
+            save(); renderAll(); showExpenseDetail(id);
+          });
+        } else {
+          customConfirm('Settle Share', `Mark ${person}'s share of ${each} as paid back to ${exp.paidBy}?`, ()=>{
+            if(!exp.paidSettlements) exp.paidSettlements={};
+            exp.paidSettlements[person]={ts:new Date().toISOString(),amt:share};
+            logHistory(t,'settled',person,exp.desc,share,`${person} paid back ${each} to ${exp.paidBy}`);
+            save(); renderAll(); showExpenseDetail(id);
+          });
+        }
+      });
+
+      row.appendChild(av); row.appendChild(name); row.appendChild(amt); row.appendChild(btn);
+      sec.appendChild(row);
+    });
+    body.appendChild(sec);
+  }
+
+  // Footer actions
+  const footer=document.createElement('div'); footer.className='detail-footer-actions';
+
+  const delBtn=document.createElement('button'); delBtn.className='btn btn-outline btn-delete-outline btn-sm'; delBtn.textContent='Delete';
+  delBtn.addEventListener('click', ()=>{ closeModal('modalExpenseDetail'); delExp(exp.id); });
+
+  const rightBtns=document.createElement('div'); rightBtns.style.cssText='display:flex;gap:8px';
+
+  const editBtn=document.createElement('button'); editBtn.className='btn btn-outline btn-sm'; editBtn.textContent='Edit';
+  editBtn.addEventListener('click', ()=>{ closeModal('modalExpenseDetail'); showEditExpenseModal(exp.id); });
+
+  const doneBtn=document.createElement('button'); doneBtn.className='btn btn-primary btn-sm'; doneBtn.textContent='Done';
+  doneBtn.addEventListener('click', ()=>closeModal('modalExpenseDetail'));
+
+  rightBtns.appendChild(editBtn); rightBtns.appendChild(doneBtn);
+  footer.appendChild(delBtn); footer.appendChild(rightBtns);
+  body.appendChild(footer);
+
+  document.getElementById('detailTitle').textContent=exp.desc;
+  openModal('modalExpenseDetail');
+}
+
+
+
+let settingsCoverPhoto = null; // null = no change, false = remove, string = new data
+
+function showTripSettings() {
+  const t = currentTrip(); if(!t) return;
+  document.getElementById('stName').value = t.name || '';
+  document.getElementById('stStart').value = t.startDate || '';
+  document.getElementById('stEnd').value = t.endDate || '';
+  settingsCoverPhoto = null;
+
+  // Icon grid — mark current selection
+  document.querySelectorAll('#iconGrid .icon-opt').forEach(el => {
+    el.classList.toggle('selected', el.dataset.icon === (t.icon||''));
+  });
+
+  // Cover photo preview
+  if (t.coverPhoto) {
+    document.getElementById('coverPreviewImg').src = t.coverPhoto;
+    document.getElementById('coverPreviewWrap').style.display = 'block';
+    document.getElementById('coverUploadZone').style.display = 'none';
+  } else {
+    document.getElementById('coverPreviewWrap').style.display = 'none';
+    document.getElementById('coverUploadZone').style.display = '';
+  }
+  document.getElementById('coverPhotoInput').value = '';
+  openModal('modalTripSettings');
+  setTimeout(()=>document.getElementById('stName').focus(), 100);
+}
+
+function selectTripIcon(el) {
+  document.querySelectorAll('#iconGrid .icon-opt').forEach(e => e.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function handleCoverPhoto(e) {
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    settingsCoverPhoto = ev.target.result;
+    document.getElementById('coverPreviewImg').src = settingsCoverPhoto;
+    document.getElementById('coverPreviewWrap').style.display = 'block';
+    document.getElementById('coverUploadZone').style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeCoverPhoto() {
+  settingsCoverPhoto = false; // signal to delete
+  document.getElementById('coverPreviewWrap').style.display = 'none';
+  document.getElementById('coverUploadZone').style.display = '';
+  document.getElementById('coverPhotoInput').value = '';
+}
+
+function saveTripSettings() {
+  const t = currentTrip(); if(!t) return;
+  const name = document.getElementById('stName').value.trim();
+  if(!name) { alert('Trip name cannot be empty.'); return; }
+  const oldName = t.name;
+  t.name = name;
+  t.startDate = document.getElementById('stStart').value;
+  t.endDate = document.getElementById('stEnd').value;
+  // icon
+  const selIcon = document.querySelector('#iconGrid .icon-opt.selected');
+  t.icon = selIcon ? selIcon.dataset.icon : (t.icon || '');
+  // cover photo
+  if (settingsCoverPhoto === false) {
+    t.coverPhoto = null;
+  } else if (settingsCoverPhoto) {
+    t.coverPhoto = settingsCoverPhoto;
+  }
+  if(oldName !== name) logHistory(t, 'edited', '—', `Trip renamed to "${name}"`, null, null);
+  save();
+  closeModal('modalTripSettings');
+  renderAll();
+  renderHome(); // refresh home grid too
+}
+
+let editingExpenseId = null;
+let editPhoto = null;
+
+function logHistory(trip, action, who, desc, amount, changes) {
+  if(!trip.history) trip.history=[];
+  trip.history.push({ts:new Date().toISOString(), who, action, desc, amount, changes:changes||null});
+}
+
+function renderHistory() {
+  const t=currentTrip();
+  const container=document.getElementById('historyContainer');
+  if(!t.history||!t.history.length){
+    container.innerHTML=`<div class="history-empty">No activity yet.</div>`;
+    return;
+  }
+  const rows=[...t.history].reverse().map(h=>{
+    const color=pColor(h.who,t.people);
+    const timeStr=new Date(h.ts).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    const changeHtml=h.changes?`<div class="hist-change">${esc(h.changes)}</div>`:'';
+    return `<tr>
+      <td><div class="hist-who"><div class="av-sm" style="background:${color};border:none;width:24px;height:24px;font-size:10px">${initials(h.who)}</div>${esc(h.who)}</div></td>
+      <td><span class="hist-action ${h.action}">${h.action}</span></td>
+      <td><div class="hist-desc">${esc(h.desc)}</div>${changeHtml}</td>
+      <td class="hist-amount">${h.amount!=null?fmt(h.amount):''}</td>
+      <td class="hist-time">${timeStr}</td>
+    </tr>`;
+  }).join('');
+  container.innerHTML=`<table class="history-table">
+    <thead><tr><th>Person</th><th>Action</th><th>Expense</th><th style="text-align:right">Amount</th><th>When</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function showEditExpenseModal(id) {
+  const t=currentTrip();
+  const exp=t.expenses.find(e=>e.id===id); if(!exp) return;
+  editingExpenseId=id;
+  editPhoto=exp.photo||null;
+  document.getElementById('editDesc').value=exp.desc;
+  document.getElementById('editAmount').value=exp.amount;
+  document.getElementById('editNote').value=exp.note||'';
+  document.getElementById('editDate').value=exp.date||'';
+  document.getElementById('editPhotoInput').value='';
+  if(exp.photo){
+    document.getElementById('editPhotoPreview').src=exp.photo;
+    document.getElementById('editPhotoPreview').style.display='block';
+    document.getElementById('editPzIcon').textContent='✅';
+    document.getElementById('editPzText').textContent='Photo attached — tap to replace';
+  } else {
+    document.getElementById('editPhotoPreview').style.display='none';
+    document.getElementById('editPzIcon').textContent='📷';
+    document.getElementById('editPzText').textContent='Tap to replace photo';
+  }
+  document.querySelectorAll('#editCatGrid .cat-chip').forEach(c=>c.classList.remove('selected'));
+  const catEl=document.querySelector(`#editCatGrid [data-cat="${exp.category}"]`);
+  if(catEl) catEl.classList.add('selected');
+  document.getElementById('editWho').innerHTML=t.people.map(p=>`<option>${esc(p)}</option>`).join('');
+  document.getElementById('editPaidBy').innerHTML=t.people.map(p=>`<option${p===exp.paidBy?' selected':''}>${esc(p)}</option>`).join('');
+  document.getElementById('editSplit').innerHTML=t.people.map(p=>`
+    <div class="p-chip${exp.splitBetween.includes(p)?' selected':''}" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected')">
+      <span class="p-chip-dot" style="background:${pColor(p,t.people)}"></span>${esc(p)}
+    </div>`).join('');
+  openModal('modalEditExpense');
+  setTimeout(()=>document.getElementById('editDesc').focus(),100);
+}
+
+function selEditCat(el){ document.querySelectorAll('#editCatGrid .cat-chip').forEach(c=>c.classList.remove('selected')); el.classList.add('selected'); }
+function editSplitAll(){ document.querySelectorAll('#editSplit .p-chip').forEach(c=>c.classList.add('selected')); }
+function editSplitNone(){ document.querySelectorAll('#editSplit .p-chip').forEach(c=>c.classList.remove('selected')); }
+
+function handleEditPhoto(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    editPhoto=ev.target.result;
+    document.getElementById('editPhotoPreview').src=editPhoto;
+    document.getElementById('editPhotoPreview').style.display='block';
+    document.getElementById('editPzIcon').textContent='✅';
+    document.getElementById('editPzText').textContent='Photo attached';
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveEditExpense(){
+  const t=currentTrip();
+  const exp=t.expenses.find(e=>e.id===editingExpenseId); if(!exp) return;
+  const desc=document.getElementById('editDesc').value.trim();
+  const amount=parseFloat(document.getElementById('editAmount').value);
+  const paidBy=document.getElementById('editPaidBy').value;
+  const date=document.getElementById('editDate').value;
+  const note=document.getElementById('editNote').value.trim();
+  const category=document.querySelector('#editCatGrid .cat-chip.selected')?.dataset.cat||exp.category;
+  const splitBetween=[...document.querySelectorAll('#editSplit .p-chip.selected')].map(c=>c.dataset.person);
+  const who=document.getElementById('editWho').value;
+  if(!desc){alert('Please enter a description.');return;}
+  if(!amount||amount<=0){alert('Please enter a valid amount.');return;}
+  if(!splitBetween.length){alert('Select at least one person to split with.');return;}
+  // build a change summary
+  const changes=[];
+  if(exp.desc!==desc) changes.push(`renamed to "${desc}"`);
+  if(exp.amount!==amount) changes.push(`amount ${fmt(exp.amount)} → ${fmt(amount)}`);
+  if(exp.paidBy!==paidBy) changes.push(`payer changed to ${paidBy}`);
+  if(exp.category!==category) changes.push(`category → ${category}`);
+  const prevSplit=[...exp.splitBetween].sort().join(',');
+  const newSplit=[...splitBetween].sort().join(',');
+  if(prevSplit!==newSplit) changes.push(`split updated`);
+  // apply
+  exp.desc=desc; exp.amount=amount; exp.paidBy=paidBy; exp.date=date;
+  exp.note=note; exp.category=category; exp.splitBetween=splitBetween; exp.photo=editPhoto;
+  logHistory(t,'edited',who,desc,amount,changes.length?changes.join(', '):null);
+  save(); closeModal('modalEditExpense'); renderAll();
+}
+
+function delExp(id) {
+  const t=currentTrip();
+  const exp=t.expenses.find(e=>e.id===id); if(!exp) return;
+  customConfirm('Delete Expense', `Delete "${exp.desc}" (${fmt(exp.amount)})?`, () => {
+    logHistory(t,'deleted',exp.paidBy,exp.desc,exp.amount);
+    t.expenses=t.expenses.filter(e=>e.id!==id);
+    save(); renderAll();
+  });
+}
+
+function computeNet() {
+  const t=currentTrip(); const net={};
+  t.people.forEach(p=>net[p]=0);
+  t.expenses.forEach(exp=>{
+    net[exp.paidBy]=(net[exp.paidBy]||0)+exp.amount;
+    const share=exp.splitBetween.length?exp.amount/exp.splitBetween.length:0;
+    exp.splitBetween.forEach(p=>{ net[p]=(net[p]||0)-share; });
+  });
+  return net;
+}
+
+function renderBalances() {
+  const t=currentTrip(); const net=computeNet();
+  const grid=document.getElementById('balanceGrid'); grid.innerHTML='';
+  if (!t.people.length) { grid.innerHTML=`<div style="color:var(--ink-3);font-size:13px">Add some people to see balances.</div>`; return; }
+  t.people.forEach(p=>{
+    const n=net[p]||0;
+    const div=document.createElement('div'); div.className='balance-card';
+    const cls=n>0.01?'bal-pos':n<-0.01?'bal-neg':'bal-zero';
+    const label=n>0.01?`gets back ${fmt(n)}`:n<-0.01?`owes ${fmt(Math.abs(n))}`:'settled up';
+    div.innerHTML=`
+      <div class="av" style="background:${pColor(p,t.people)}">${initials(p)}</div>
+      <div><div class="balance-name">${esc(p)}</div><div class="balance-amount ${cls}">${label}</div></div>`;
+    grid.appendChild(div);
+  });
+}
+
+function renderSettlements() {
+  const t=currentTrip(); const net=computeNet();
+  const list=document.getElementById('settleList'); list.innerHTML='';
+  const cred=[],debt=[];
+  Object.entries(net).forEach(([p,n])=>{ if(n>0.005) cred.push({p,n}); else if(n<-0.005) debt.push({p,n:-n}); });
+  cred.sort((a,b)=>b.n-a.n); debt.sort((a,b)=>b.n-a.n);
+  const c=cred.map(x=>({...x})),d=debt.map(x=>({...x}));
+  const res=[]; let ci=0,di=0;
+  while(ci<c.length&&di<d.length){
+    const amt=Math.min(c[ci].n,d[di].n);
+    if(amt>0.005) res.push({from:d[di].p,to:c[ci].p,amt});
+    c[ci].n-=amt; d[di].n-=amt;
+    if(c[ci].n<0.005)ci++; if(d[di].n<0.005)di++;
+  }
+  if(!res.length){
+    list.innerHTML=`<div style="text-align:center;padding:40px 20px;color:var(--ink-3)"><div style="font-size:32px;margin-bottom:10px">🎉</div><div style="font-weight:600;font-size:15px;color:var(--ink);margin-bottom:4px">All squared up!</div><div style="font-size:13px">No payments needed.</div></div>`;
+    return;
+  }
+  res.forEach(s=>{
+    const sid='settle-'+s.from.replace(/\s+/g,'_')+'-'+s.to.replace(/\s+/g,'_');
+    const alreadySettled=(t.settledPayments||[]).some(p=>p.id===sid);
+    const div=document.createElement('div');
+    div.className='settle-item'+(alreadySettled?' is-settled':'');
+
+    const fromAv=document.createElement('div');
+    fromAv.className='av-sm'; fromAv.style.cssText=`background:${pColor(s.from,t.people)};border:none;width:28px;height:28px`;
+    fromAv.textContent=initials(s.from);
+
+    const fromName=document.createElement('span');
+    fromName.className='settle-person'; fromName.textContent=s.from;
+
+    const arrow=document.createElement('span');
+    arrow.className='settle-arrow'; arrow.textContent='→';
+
+    const toAv=document.createElement('div');
+    toAv.className='av-sm'; toAv.style.cssText=`background:${pColor(s.to,t.people)};border:none;width:28px;height:28px`;
+    toAv.textContent=initials(s.to);
+
+    const toName=document.createElement('span');
+    toName.className='settle-person'; toName.textContent=s.to;
+
+    const amtEl=document.createElement('div');
+    amtEl.className='settle-amount'; amtEl.textContent=fmt(s.amt);
+
+    const btn=document.createElement('button');
+    if(alreadySettled){
+      btn.className='settle-btn settled';
+      btn.textContent='✓ Paid';
+      btn.title='Click to mark as unpaid';
+      btn.addEventListener('click', ()=>unsettle(sid, s.from, s.to, s.amt));
+    } else {
+      btn.className='settle-btn';
+      btn.textContent='Settle Up';
+      btn.addEventListener('click', ()=>confirmSettlement(sid, s.from, s.to, s.amt));
+    }
+
+    div.appendChild(fromAv);
+    div.appendChild(fromName);
+    div.appendChild(arrow);
+    div.appendChild(toAv);
+    div.appendChild(toName);
+    div.appendChild(amtEl);
+    div.appendChild(btn);
+    list.appendChild(div);
+  });
+}
+
+
+function customConfirm(title, msg, onOk) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMsg').textContent = msg;
+  const okBtn = document.getElementById('confirmOkBtn');
+  const cancelBtn = document.getElementById('confirmCancelBtn');
+  const newOk = okBtn.cloneNode(true);
+  const newCancel = cancelBtn.cloneNode(true);
+  okBtn.parentNode.replaceChild(newOk, okBtn);
+  cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+  newOk.addEventListener('click', () => { closeModal('modalConfirm'); onOk(); });
+  newCancel.addEventListener('click', () => closeModal('modalConfirm'));
+  openModal('modalConfirm');
+}
+
+function confirmSettlement(sid, from, to, amt) {
+  customConfirm(
+    'Settle Up',
+    `Mark ${from} → ${to} (${fmt(amt)}) as paid?`,
+    () => {
+      const t=currentTrip();
+      if(!t.settledPayments) t.settledPayments=[];
+      if(t.settledPayments.some(p=>p.id===sid)) return;
+      t.settledPayments.push({id:sid, from, to, amt, ts:new Date().toISOString()});
+      logHistory(t,'settled',from,`Payment to ${to}`,amt,`${from} paid ${fmt(amt)} to ${to}`);
+      save(); renderAll();
+    }
+  );
+}
+
+function unsettle(sid, from, to, amt) {
+  customConfirm(
+    'Mark as Unpaid',
+    `Mark ${from} → ${to} (${fmt(amt)}) as unpaid and revert to outstanding?`,
+    () => {
+      const t=currentTrip();
+      t.settledPayments=(t.settledPayments||[]).filter(p=>p.id!==sid);
+      logHistory(t,'edited',from,`Payment to ${to}`,amt,`marked unpaid`);
+      save(); renderAll();
+    }
+  );
+}
+
+function switchTab(tab,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); el.classList.add('active');
+  document.getElementById('tabLedger').style.display=tab==='ledger'?'':'none';
+  document.getElementById('tabBalances').style.display=tab==='balances'?'':'none';
+  document.getElementById('tabSettle').style.display=tab==='settle'?'':'none';
+  document.getElementById('tabHistory').style.display=tab==='history'?'':'none';
+}
+
+function openModal(id){ document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id){ document.getElementById(id).classList.add('hidden'); }
+
+function showNewTripModal(){
+  ['nTripName','nTripPeople'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('nTripStart').value=today();
+  document.getElementById('nTripEnd').value='';
+  openModal('modalNewTrip');
+  setTimeout(()=>document.getElementById('nTripName').focus(),100);
+}
+
+function createTrip(){
+  const name=document.getElementById('nTripName').value.trim();
+  if(!name){alert('Please enter a trip name.');return;}
+  const people=document.getElementById('nTripPeople').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const trip={id:uid(),name,startDate:document.getElementById('nTripStart').value,endDate:document.getElementById('nTripEnd').value,people,expenses:[],history:[]};
+  state.trips.push(trip); save(); closeModal('modalNewTrip'); openTrip(trip.id);
+}
+
+function showPeopleModal(){ renderPplList(); openModal('modalPeople'); }
+
+function renderPplList(){
+  const t=currentTrip();
+  document.getElementById('pplList').innerHTML=t.people.length
+    ? t.people.map((p,i)=>`<div class="ppl-item"><div class="av" style="background:${pColor(p,t.people)};width:30px;height:30px;font-size:11px">${initials(p)}</div><div class="ppl-name">${esc(p)}</div><button class="ppl-remove" onclick="removePerson(${i})">✕</button></div>`).join('')
+    : `<div style="color:var(--ink-3);font-size:13px;text-align:center;padding:12px">No people yet.</div>`;
+}
+
+function addPerson(){
+  const input=document.getElementById('addPersonName');
+  const name=input.value.trim(); if(!name)return;
+  const t=currentTrip();
+  if(!t.people.includes(name)){t.people.push(name);save();}
+  input.value=''; renderPplList(); renderAll();
+}
+
+function removePerson(idx){
+  const t=currentTrip(); const name=t.people[idx];
+  const used=t.expenses.some(e=>e.paidBy===name||e.splitBetween.includes(name));
+  if(used){ customConfirm('Remove Person', `${name} has linked expenses. Remove anyway?`, ()=>{ t.people.splice(idx,1); save(); renderPplList(); renderAll(); }); return; }
+  t.people.splice(idx,1); save(); renderPplList(); renderAll();
+}
+
+function showExpenseModal(){
+  const t=currentTrip();
+  if(!t.people.length){alert('Add at least one person first.');showPeopleModal();return;}
+  document.getElementById('eDesc').value='';
+  document.getElementById('eAmount').value='';
+  document.getElementById('eNote').value='';
+  document.getElementById('eDate').value=today();
+  document.getElementById('photoPreview').style.display='none';
+  document.getElementById('photoInput').value='';
+  document.getElementById('pzIcon').textContent='📷';
+  document.getElementById('pzText').textContent='Tap to take a photo or upload';
+  currentPhoto=null;
+  document.querySelectorAll('#catGrid .cat-chip').forEach(c=>c.classList.remove('selected'));
+  document.querySelector('[data-cat="food"]').classList.add('selected');
+  document.getElementById('ePaidBy').innerHTML=t.people.map(p=>`<option>${esc(p)}</option>`).join('');
+  document.getElementById('eSplit').innerHTML=t.people.map(p=>`
+    <div class="p-chip selected" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected')">
+      <span class="p-chip-dot" style="background:${pColor(p,t.people)}"></span>${esc(p)}
+    </div>`).join('');
+  openModal('modalExpense');
+  setTimeout(()=>document.getElementById('eDesc').focus(),100);
+}
+
+function selCat(el){ document.querySelectorAll('#catGrid .cat-chip').forEach(c=>c.classList.remove('selected')); el.classList.add('selected'); }
+function splitAll(){ document.querySelectorAll('#eSplit .p-chip').forEach(c=>c.classList.add('selected')); }
+function splitNone(){ document.querySelectorAll('#eSplit .p-chip').forEach(c=>c.classList.remove('selected')); }
+
+function handlePhoto(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    currentPhoto=ev.target.result;
+    const prev=document.getElementById('photoPreview');
+    prev.src=currentPhoto; prev.style.display='block';
+    document.getElementById('pzIcon').textContent='✅';
+    document.getElementById('pzText').textContent='Photo attached';
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveExpense(){
+  const t=currentTrip();
+  const desc=document.getElementById('eDesc').value.trim();
+  const amount=parseFloat(document.getElementById('eAmount').value);
+  const paidBy=document.getElementById('ePaidBy').value;
+  const date=document.getElementById('eDate').value;
+  const note=document.getElementById('eNote').value.trim();
+  const category=document.querySelector('#catGrid .cat-chip.selected')?.dataset.cat||'other';
+  const splitBetween=[...document.querySelectorAll('#eSplit .p-chip.selected')].map(c=>c.dataset.person);
+  if(!desc){alert('Please enter a description.');return;}
+  if(!amount||amount<=0){alert('Please enter a valid amount.');return;}
+  if(!splitBetween.length){alert('Select at least one person to split with.');return;}
+  t.expenses.push({id:uid(),desc,amount,paidBy,date,note,category,splitBetween,photo:currentPhoto});
+  logHistory(t,'added',paidBy,desc,amount);
+  save(); closeModal('modalExpense'); renderAll();
+}
+
+function openLightbox(e,src){ e.stopPropagation(); document.getElementById('lightboxImg').src=src; document.getElementById('lightbox').classList.remove('hidden'); }
+function closeLightbox(){ document.getElementById('lightbox').classList.add('hidden'); }
+
+document.querySelectorAll('.modal-backdrop').forEach(el=>{ el.addEventListener('click',e=>{ if(e.target===el) el.classList.add('hidden'); }); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ document.querySelectorAll('.modal-backdrop:not(.hidden)').forEach(m=>m.classList.add('hidden')); closeLightbox(); } });
+
+// ── INIT ──
+load();
+if(!state.trips.length){
+  const demo={
+    id:uid(), name:'Japan Trip',
+    startDate:'2025-04-02', endDate:'2025-04-12',
+    people:['Marcus','Elena','Dev','Sara'],
+    expenses:[
+      {id:uid(),desc:'ANA Flights',amount:3200,paidBy:'Marcus',date:'2025-04-02',note:'Round trip x4',category:'transport',splitBetween:['Marcus','Elena','Dev','Sara'],photo:null},
+      {id:uid(),desc:'Hotel Gracery – 5 nights',amount:1100,paidBy:'Elena',date:'2025-04-02',note:'Shinjuku',category:'hotel',splitBetween:['Marcus','Elena','Dev','Sara'],photo:null},
+      {id:uid(),desc:'Omakase dinner',amount:480,paidBy:'Dev',date:'2025-04-05',note:'Best meal of my life',category:'food',splitBetween:['Marcus','Elena','Dev','Sara'],photo:null},
+      {id:uid(),desc:'Shinkansen passes',amount:340,paidBy:'Sara',date:'2025-04-06',note:'7-day JR pass',category:'transport',splitBetween:['Marcus','Elena','Dev','Sara'],photo:null},
+      {id:uid(),desc:'TeamLab Planets',amount:96,paidBy:'Marcus',date:'2025-04-07',note:'',category:'activity',splitBetween:['Elena','Dev','Sara'],photo:null},
+    ],
+    history:[
+      {ts:'2025-04-02T09:00:00',who:'Marcus',action:'added',desc:'ANA Flights',amount:3200},
+      {ts:'2025-04-02T09:05:00',who:'Elena',action:'added',desc:'Hotel Gracery – 5 nights',amount:1100},
+      {ts:'2025-04-05T20:30:00',who:'Dev',action:'added',desc:'Omakase dinner',amount:480},
+      {ts:'2025-04-06T11:00:00',who:'Sara',action:'added',desc:'Shinkansen passes',amount:340},
+      {ts:'2025-04-07T14:00:00',who:'Marcus',action:'added',desc:'TeamLab Planets',amount:96},
+    ]
+  };
+  state.trips.push(demo); save();
+}
+renderHome();
+</script>
+</body>
+</html>
