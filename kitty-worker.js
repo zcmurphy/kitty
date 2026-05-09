@@ -25,6 +25,14 @@ function err(msg, status = 400) { return json({ error: msg }, status); }
 // ── Auth helpers ─────────────────────────────────────────────
 async function validateToken(req, env, tripId) {
   const token = req.headers.get('X-Invite-Token') || '';
+
+  // Master secret bypass — set KITTY_SECRET in wrangler.toml [vars]
+  if (env.KITTY_SECRET && token === 'master:' + env.KITTY_SECRET) return true;
+
+  // Bootstrap mode: if this trip has NO tokens yet, allow and auto-issue one
+  const { keys } = await env.KV.list({ prefix: `invite:${tripId}:` });
+  if (keys.length === 0) return 'bootstrap';
+
   if (!token) return false;
   const stored = await env.KV.get(`invite:${tripId}:${token}`);
   return stored !== null;
@@ -100,10 +108,14 @@ export default {
           return json(results);
         }
 
-        // GET single trip (requires valid token)
+        // GET single trip (requires valid token; auto-issues one in bootstrap mode)
         if (method === 'GET' && id && !sub) {
           const authed = await validateToken(req, env, id);
           if (!authed) return err('Invalid or missing invite token', 401);
+          let bootstrapToken = null;
+          if (authed === 'bootstrap') {
+            bootstrapToken = await createInviteToken(env, id, 'creator');
+          }
 
           const trip = await env.DB.prepare(`SELECT * FROM trips WHERE id=?`).bind(id).first();
           if (!trip) return err('Trip not found', 404);
@@ -128,6 +140,7 @@ export default {
             expenses,
             history,
             settledPayments: settlements,
+            ...(bootstrapToken ? { bootstrapToken } : {}),
           });
         }
 

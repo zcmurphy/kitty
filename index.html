@@ -1083,7 +1083,10 @@ async function loadFromAPI() {
     }));
     lsSave();
   } catch(e) {
-    toast('Could not reach server — using local data', 'error', 4000);
+    const msg = e.message?.includes('401')
+      ? 'Auth error — check your invite token'
+      : 'Could not reach server — showing cached data';
+    toast(msg, 'error', 4000);
     lsLoad();
   } finally {
     loader.classList.add('hidden');
@@ -1097,6 +1100,11 @@ async function loadTrip(id) {
   try {
     const data = await api('GET', '/trips/'+id);
     const idx = state.trips.findIndex(t=>t.id===id);
+    // Store bootstrap token if server issued one for this trip
+    if (data.bootstrapToken) {
+      setToken(id, data.bootstrapToken);
+      toast('Access granted — invite link created', 'success');
+    }
     const trip = {
       id: data.id, name: data.name,
       startDate: data.start_date||'', endDate: data.end_date||'',
@@ -1121,7 +1129,10 @@ async function loadTrip(id) {
     lsSave();
     return trip;
   } catch(e) {
-    toast('Failed to load trip data', 'error');
+    const msg = e.message?.includes('401')
+      ? 'No access to this trip — you may need an invite link'
+      : 'Failed to load trip — showing cached data';
+    toast(msg, 'error', 4000);
     return state.trips.find(t=>t.id===id);
   } finally {
     loader.classList.add('hidden');
