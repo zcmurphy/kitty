@@ -602,6 +602,19 @@
     font-size: 12px; font-weight: 600; color: var(--red); flex: 1; min-width: 120px;
   }
 
+
+  /* ── INVITE LINKS ── */
+  .invite-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg); border: 1.5px solid var(--border);
+    border-radius: 7px; padding: 7px 10px; font-size: 12px;
+  }
+  .invite-token { font-family: 'Roboto Mono', monospace; font-size: 11px; color: var(--ink-2); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .invite-copy { background:none; border:none; cursor:pointer; color:var(--ink-3); font-size:13px; padding:2px 4px; transition:color 0.15s; }
+  .invite-copy:hover { color:var(--ink); }
+  .invite-revoke { background:none; border:none; cursor:pointer; color:var(--ink-4); font-size:12px; padding:2px 4px; transition:color 0.15s; }
+  .invite-revoke:hover { color:var(--red); }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -622,7 +635,7 @@
   <header>
     <div class="logo">
       <div class="logo-dot"></div>
-      Kitty<span class="sync-dot" id="syncDot" title="Sync status"></span>
+      Kitty<span class="sync-dot" id="syncDot" title="Sync status"></span> <span id="revBadge" style="font-family:'Roboto Mono',monospace;font-size:9px;color:rgba(255,255,255,0.25);letter-spacing:.04em"></span>
     </div>
     <div id="headerActions">
       <button class="btn btn-primary btn-sm" onclick="showNewTripModal()">+ New Trip</button>
@@ -924,6 +937,15 @@
         <div class="icon-grid" id="iconGrid"><div class="icon-opt" data-icon="✈️" onclick="selectTripIcon(this)">✈️</div><div class="icon-opt" data-icon="🏖️" onclick="selectTripIcon(this)">🏖️</div><div class="icon-opt" data-icon="⛷️" onclick="selectTripIcon(this)">⛷️</div><div class="icon-opt" data-icon="🗺️" onclick="selectTripIcon(this)">🗺️</div><div class="icon-opt" data-icon="🏕️" onclick="selectTripIcon(this)">🏕️</div><div class="icon-opt" data-icon="🎉" onclick="selectTripIcon(this)">🎉</div><div class="icon-opt" data-icon="🍜" onclick="selectTripIcon(this)">🍜</div><div class="icon-opt" data-icon="🚂" onclick="selectTripIcon(this)">🚂</div><div class="icon-opt" data-icon="🚢" onclick="selectTripIcon(this)">🚢</div><div class="icon-opt" data-icon="🏔️" onclick="selectTripIcon(this)">🏔️</div><div class="icon-opt" data-icon="🌴" onclick="selectTripIcon(this)">🌴</div><div class="icon-opt" data-icon="🎒" onclick="selectTripIcon(this)">🎒</div><div class="icon-opt" data-icon="🏛️" onclick="selectTripIcon(this)">🏛️</div><div class="icon-opt" data-icon="🍣" onclick="selectTripIcon(this)">🍣</div><div class="icon-opt" data-icon="🎸" onclick="selectTripIcon(this)">🎸</div><div class="icon-opt" data-icon="🚵" onclick="selectTripIcon(this)">🚵</div><div class="icon-opt" data-icon="🏄" onclick="selectTripIcon(this)">🏄</div><div class="icon-opt" data-icon="🎿" onclick="selectTripIcon(this)">🎿</div><div class="icon-opt" data-icon="🌅" onclick="selectTripIcon(this)">🌅</div><div class="icon-opt" data-icon="🏝️" onclick="selectTripIcon(this)">🏝️</div><div class="icon-opt" data-icon="🚁" onclick="selectTripIcon(this)">🚁</div><div class="icon-opt" data-icon="🌋" onclick="selectTripIcon(this)">🌋</div><div class="icon-opt" data-icon="🍷" onclick="selectTripIcon(this)">🍷</div><div class="icon-opt" data-icon="🎭" onclick="selectTripIcon(this)">🎭</div><div class="icon-opt" data-icon="🎪" onclick="selectTripIcon(this)">🎪</div><div class="icon-opt" data-icon="🏺" onclick="selectTripIcon(this)">🏺</div><div class="icon-opt" data-icon="🦁" onclick="selectTripIcon(this)">🦁</div><div class="icon-opt" data-icon="🐠" onclick="selectTripIcon(this)">🐠</div></div>
       </div>
 
+      <div style="margin-bottom:18px">
+        <div class="settings-section-label" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Invite Links</span>
+          <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="createNewInvite()">+ New</button>
+        </div>
+        <div id="invitesList" style="display:flex;flex-direction:column;gap:6px;margin-top:4px"></div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:6px">Anyone with an invite link can access this trip.</div>
+      </div>
+
       <div style="margin-bottom:4px">
         <div class="settings-section-label">Cover Photo</div>
         <div id="coverPreviewWrap" class="cover-preview-wrap" style="display:none">
@@ -964,6 +986,18 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
+const REV = 'e15c2ed';
+
+// ── Invite token auth ──
+function getToken(tripId) {
+  return localStorage.getItem('kitty_token_'+tripId) || '';
+}
+function setToken(tripId, token) {
+  localStorage.setItem('kitty_token_'+tripId, token);
+}
+function authHeaders(tripId) {
+  return { 'Content-Type':'application/json', 'X-Invite-Token': getToken(tripId) };
+}
 
 // ── local cache ──
 function lsSave() { try { localStorage.setItem('kitty_v3', JSON.stringify(state)); } catch(e){} }
@@ -986,10 +1020,11 @@ function toast(msg, type='', duration=2800) {
 }
 
 // ── generic fetch wrapper ──
-async function api(method, path, body) {
+async function api(method, path, body, tripId) {
   setSyncDot('syncing');
   try {
-    const opts = { method, headers: {'Content-Type':'application/json'} };
+    const token = tripId ? getToken(tripId) : (state.currentTripId ? getToken(state.currentTripId) : '');
+    const opts = { method, headers: {'Content-Type':'application/json', 'X-Invite-Token': token} };
     if(body) opts.body = JSON.stringify(body);
     const r = await fetch(API+path, opts);
     if(!r.ok) { const e=await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
@@ -999,6 +1034,37 @@ async function api(method, path, body) {
     setSyncDot('err');
     throw e;
   }
+}
+
+// Upload a photo (base64 dataURL) to R2, return the key
+async function uploadPhotoToR2(dataUrl, tripId) {
+  if(!dataUrl || !dataUrl.startsWith('data:')) return null;
+  const [header, b64] = dataUrl.split(',');
+  const ct = header.match(/data:(.*?);/)?.[1] || 'image/jpeg';
+  const binary = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+  setSyncDot('syncing');
+  try {
+    const token = getToken(tripId);
+    const r = await fetch(API+'/photos?tripId='+tripId, {
+      method: 'POST',
+      headers: { 'Content-Type': ct, 'X-Invite-Token': token },
+      body: binary,
+    });
+    if(!r.ok) throw new Error('Photo upload failed');
+    const { key } = await r.json();
+    setSyncDot('ok');
+    return key; // store key in D1, not the raw base64
+  } catch(e) {
+    setSyncDot('err');
+    toast('Photo upload failed: '+e.message, 'error');
+    return null;
+  }
+}
+
+function photoUrl(keyOrData) {
+  if(!keyOrData) return null;
+  if(keyOrData.startsWith('data:') || keyOrData.startsWith('blob:')) return keyOrData;
+  return API+'/photos/'+keyOrData;
 }
 
 // ── load all trips from API on startup ──
@@ -1249,7 +1315,7 @@ function renderExpenses() {
         ${exp.note?`<div class="exp-note">${esc(exp.note)}</div>`:''}
         <div class="exp-split exp-split-${exp.id}">÷ ${exp.splitBetween.length} people = ${each} each</div>
       </div>
-      ${exp.photo?`<img class="exp-receipt" src="${exp.photo}" onclick="openLightbox(event,this.src)">` :''}
+      ${exp.photo?`<img class="exp-receipt" src="${photoUrl(exp.photo)}" onclick="openLightbox(event,this.src)">` :''}
       <div class="exp-right">
         <div class="exp-amount">${fmt(exp.amount)}</div>
         <div class="exp-payer">paid by ${esc(exp.paidBy)}</div>
@@ -1313,8 +1379,9 @@ function showExpenseDetail(id) {
 
   // Photo
   if(exp.photo){
-    const img=document.createElement('img'); img.className='detail-photo'; img.src=exp.photo; img.alt='Receipt';
-    img.addEventListener('click', e=>openLightbox(e,exp.photo));
+    const img=document.createElement('img'); img.className='detail-photo'; img.alt='Receipt';
+    img.src = photoUrl(exp.photo);
+    img.addEventListener('click', e=>openLightbox(e,photoUrl(exp.photo)));
     body.appendChild(img);
   }
 
@@ -1421,6 +1488,7 @@ function showTripSettings() {
     document.getElementById('coverUploadZone').style.display = '';
   }
   document.getElementById('coverPhotoInput').value = '';
+  loadInvites();
   // reset delete zone in case it was expanded
   const dz=document.getElementById('deleteTripZone');
   if(dz) dz.innerHTML='<button class="btn btn-outline btn-delete-outline btn-sm" onclick="showDeleteTripConfirm()">Delete Trip</button>';
@@ -1475,6 +1543,78 @@ async function saveTripSettings() {
   await save(()=>api('PUT','/trips/'+t.id,{name,startDate:t.startDate,endDate:t.endDate,icon:t.icon,coverPhoto:t.coverPhoto}));
   toast('Trip updated', 'success');
 }
+
+async function loadInvites() {
+  const t = currentTrip(); if(!t) return;
+  const container = document.getElementById('invitesList'); if(!container) return;
+  try {
+    const tokens = await api('GET', '/trips/'+t.id+'/invites');
+    if(!tokens.length) {
+      container.innerHTML = '<div style="font-size:12px;color:var(--ink-3)">No invite links yet.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    tokens.forEach(inv => {
+      const link = window.location.origin + window.location.pathname + '?trip='+t.id+'&token='+inv.token;
+      const row = document.createElement('div'); row.className = 'invite-row';
+      row.innerHTML = `
+        <span class="invite-token" title="${link}">${inv.label || 'invite'} · ${inv.token}</span>
+        <button class="invite-copy" title="Copy link" onclick="copyInviteLink('${link}', this)">⎘</button>
+        <button class="invite-revoke" title="Revoke" onclick="revokeInvite('${inv.token}')">✕</button>`;
+      container.appendChild(row);
+    });
+  } catch(e) {
+    const container = document.getElementById('invitesList');
+    if(container) container.innerHTML = '<div style="font-size:12px;color:var(--ink-3)">Could not load invites.</div>';
+  }
+}
+
+async function createNewInvite() {
+  const t = currentTrip(); if(!t) return;
+  try {
+    const { token } = await api('POST', '/trips/'+t.id+'/invites', {label:'invite'});
+    toast('Invite link created', 'success');
+    loadInvites();
+  } catch(e) { toast('Failed to create invite', 'error'); }
+}
+
+function copyInviteLink(link, btn) {
+  navigator.clipboard.writeText(link).then(()=>{
+    const orig = btn.textContent; btn.textContent = '✓';
+    setTimeout(()=>btn.textContent=orig, 1800);
+    toast('Link copied to clipboard', 'success');
+  }).catch(()=>toast('Copy failed', 'error'));
+}
+
+async function revokeInvite(token) {
+  const t = currentTrip(); if(!t) return;
+  try {
+    await api('DELETE', '/trips/'+t.id+'/invites/'+token);
+    toast('Invite revoked');
+    loadInvites();
+  } catch(e) { toast('Failed to revoke invite', 'error'); }
+}
+
+// ── Join via URL param ──────────────────────────────────────
+async function checkJoinLink() {
+  const params = new URLSearchParams(window.location.search);
+  const tripId = params.get('trip');
+  const token  = params.get('token');
+  if(!tripId || !token) return false;
+  // Store the token
+  setToken(tripId, token);
+  // Clear URL params without reload
+  window.history.replaceState({}, '', window.location.pathname);
+  toast('Joined trip!', 'success');
+  // Load the trip
+  await loadFromAPI();
+  renderHome();
+  // Auto-open the trip
+  const trip = state.trips.find(t=>t.id===tripId);
+  if(trip) openTrip(tripId);
+  return true;
+}
+
 
 function showDeleteTripConfirm() {
   const t = currentTrip(); if(!t) return;
@@ -1815,7 +1955,10 @@ async function createTrip(){
   const trip={id:uid(),name,startDate:document.getElementById('nTripStart').value,endDate:document.getElementById('nTripEnd').value,people,expenses:[],history:[],settledPayments:[],_loaded:true};
   state.trips.push(trip);
   closeModal('modalNewTrip');
-  await save(()=>api('POST','/trips',{id:trip.id,name,startDate:trip.startDate,endDate:trip.endDate,people}));
+  await save(async()=>{
+    const res = await api('POST','/trips',{id:trip.id,name,startDate:trip.startDate,endDate:trip.endDate,people});
+    if(res.token) setToken(trip.id, res.token);
+  });
   toast('Trip created', 'success');
   openTrip(trip.id);
 }
@@ -1910,7 +2053,12 @@ async function saveExpense(){
   logHistory(t,'added',paidBy,desc,amount);
   closeModal('modalExpense'); renderAll();
   await save(async()=>{
-    await api('POST','/expenses',{id:exp.id,tripId:t.id,desc,amount,paidBy,date,note,category,splitBetween,photo:currentPhoto,paidSettlements:{}});
+    let photoKey = null;
+    if(currentPhoto && currentPhoto.startsWith('data:')) {
+      photoKey = await uploadPhotoToR2(currentPhoto, t.id);
+      if(photoKey) exp.photo = photoKey; // replace local base64 with R2 key
+    }
+    await api('POST','/expenses',{id:exp.id,tripId:t.id,desc,amount,paidBy,date,note,category,splitBetween,photoKey,paidSettlements:{}});
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
   });
 }
@@ -1922,9 +2070,12 @@ document.querySelectorAll('.modal-backdrop').forEach(el=>{ el.addEventListener('
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ document.querySelectorAll('.modal-backdrop:not(.hidden)').forEach(m=>m.classList.add('hidden')); closeLightbox(); } });
 
 // ── INIT ──
-lsLoad(); // show cached data immediately
+document.getElementById('revBadge').textContent = 'rev:'+REV;
+lsLoad();
 renderHome();
-loadFromAPI().then(()=>renderHome()); // then refresh from API
+checkJoinLink().then(joined => {
+  if(!joined) loadFromAPI().then(()=>renderHome());
+});
 </script>
 </body>
 </html>

@@ -1,0 +1,16 @@
+name = "kitty-api"
+main = "kitty-worker.js"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "kittydb"
+database_id = "ca161980-8e84-48d7-8873-af621906217a"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "kitty-assets"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
