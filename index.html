@@ -649,7 +649,7 @@
       <div class="home-top">
         <div>
           <div class="home-heading">Your Trips</div>
-          <div class="home-sub">Track shared expenses, settle up with the group.</div>
+          <div class="home-sub">Track shared expenses, settle up with the group. <span id="homeRevBadge" style="font-family:'Roboto Mono',monospace;font-size:10px;color:var(--ink-4);letter-spacing:.04em;margin-left:4px"></span></div>
         </div>
         <button class="btn btn-primary" onclick="showNewTripModal()">+ New Trip</button>
       </div>
@@ -2082,6 +2082,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ document.querySel
 
 // ── INIT ──
 document.getElementById('revBadge').textContent = 'rev:'+REV;
+document.getElementById('homeRevBadge').textContent = 'rev:'+REV;
 lsLoad();
 renderHome();
 checkJoinLink().then(joined => {
