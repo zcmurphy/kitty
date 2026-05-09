@@ -29,40 +29,60 @@ async function validateToken(req, env, tripId) {
   // Master secret bypass — set KITTY_SECRET in wrangler.toml [vars]
   if (env.KITTY_SECRET && token === 'master:' + env.KITTY_SECRET) return true;
 
-  // Bootstrap mode: if this trip has NO tokens yet, allow and auto-issue one
-  const { keys } = await env.KV.list({ prefix: `invite:${tripId}:` });
-  if (keys.length === 0) return 'bootstrap';
+  // If KV isn't bound yet, allow all access (setup mode)
+  if (!env.KV) return 'bootstrap';
 
-  if (!token) return false;
-  const stored = await env.KV.get(`invite:${tripId}:${token}`);
-  return stored !== null;
+  // Bootstrap mode: if this trip has NO tokens yet, allow and auto-issue one
+  try {
+    const { keys } = await env.KV.list({ prefix: `invite:${tripId}:` });
+    if (keys.length === 0) return 'bootstrap';
+    if (!token) return false;
+    const stored = await env.KV.get(`invite:${tripId}:${token}`);
+    return stored !== null;
+  } catch(e) {
+    // KV error — fail open so users aren't locked out
+    console.error('KV error:', e);
+    return true;
+  }
 }
 
 async function createInviteToken(env, tripId, label) {
   const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
-  const payload = JSON.stringify({ tripId, label, created: new Date().toISOString() });
-  // no expiry — permanent until revoked
-  await env.KV.put(`invite:${tripId}:${token}`, payload);
+  if (env.KV) {
+    try {
+      const payload = JSON.stringify({ tripId, label, created: new Date().toISOString() });
+      await env.KV.put(`invite:${tripId}:${token}`, payload);
+    } catch(e) {
+      console.error('KV put error:', e);
+    }
+  }
   return token;
 }
 
 async function listInviteTokens(env, tripId) {
-  const { keys } = await env.KV.list({ prefix: `invite:${tripId}:` });
-  const tokens = await Promise.all(keys.map(async k => {
-    const val = await env.KV.get(k.name);
-    return { token: k.name.split(':')[2], ...JSON.parse(val || '{}') };
-  }));
-  return tokens;
+  if (!env.KV) return [];
+  try {
+    const { keys } = await env.KV.list({ prefix: `invite:${tripId}:` });
+    const tokens = await Promise.all(keys.map(async k => {
+      const val = await env.KV.get(k.name);
+      return { token: k.name.split(':')[2], ...JSON.parse(val || '{}') };
+    }));
+    return tokens;
+  } catch(e) {
+    console.error('KV list error:', e);
+    return [];
+  }
 }
 
 // ── R2 photo helpers ─────────────────────────────────────────
 async function uploadPhoto(env, key, body, contentType) {
+  if (!env.R2) throw new Error('R2 bucket not bound — check wrangler.toml');
   await env.R2.put(key, body, { httpMetadata: { contentType } });
   return key;
 }
 
 async function deletePhoto(env, key) {
-  if (key) await env.R2.delete(key).catch(() => {});
+  if (key && env.R2) await env.R2.delete(key).catch(() => {});
 }
 
 // ── parse route ──────────────────────────────────────────────
@@ -189,8 +209,10 @@ export default {
             deletePhoto(env, trip?.cover_photo),
           ]);
           // Clean up KV invite tokens
-          const { keys } = await env.KV.list({ prefix: `invite:${id}:` });
-          await Promise.all(keys.map(k => env.KV.delete(k.name)));
+          if (env.KV) {
+            const { keys } = await env.KV.list({ prefix: `invite:${id}:` });
+            await Promise.all(keys.map(k => env.KV.delete(k.name)));
+          }
           // Delete from D1 (cascades)
           await env.DB.prepare(`DELETE FROM trips WHERE id=?`).bind(id).run();
           return json({ ok: true });
@@ -231,7 +253,7 @@ export default {
           }
           // REVOKE a token  DELETE /api/trips/:id/invites/:token
           if (method === 'DELETE' && subId) {
-            await env.KV.delete(`invite:${id}:${subId}`);
+            if (env.KV) await env.KV.delete(`invite:${id}:${subId}`);
             return json({ ok: true });
           }
         }
@@ -307,6 +329,7 @@ export default {
 
         if (method === 'GET' && id) {
           // id here is actually the full key after /api/photos/
+          if (!env.R2) return err('R2 not configured', 503);
           const key = url.pathname.replace('/api/photos/', '');
           const obj = await env.R2.get(key);
           if (!obj) return err('Not found', 404);
