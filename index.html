@@ -615,6 +615,27 @@
   .invite-revoke { background:none; border:none; cursor:pointer; color:var(--ink-4); font-size:12px; padding:2px 4px; transition:color 0.15s; }
   .invite-revoke:hover { color:var(--red); }
 
+
+  /* ── WHO AM I SELECTOR ── */
+  .who-select-wrap {
+    display: flex; align-items: center; gap: 7px;
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 8px; padding: 5px 10px 5px 8px;
+    font-size: 13px; cursor: pointer; transition: border-color 0.15s;
+  }
+  .who-select-wrap:focus-within { border-color: var(--ink-3); }
+  .who-select-av {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  .who-select-wrap select {
+    border: none; background: transparent; font-family: 'Inter', sans-serif;
+    font-size: 13px; font-weight: 500; color: var(--ink);
+    cursor: pointer; outline: none; padding: 0; max-width: 110px;
+  }
+  .who-select-wrap select:focus { outline: none; }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -669,6 +690,12 @@
           <div class="trip-meta-line" id="tripMeta"></div>
         </div>
         <div class="trip-header-actions">
+          <div class="who-select-wrap" id="whoWrap" title="Who are you?">
+            <div class="who-select-av" id="whoAv"></div>
+            <select id="whoSelect" onchange="onWhoChange()">
+              <option value="">Who are you?</option>
+            </select>
+          </div>
           <button class="btn-settings" onclick="showTripSettings()" title="Trip settings">⚙ Settings</button>
           <button class="btn btn-outline btn-sm" onclick="showPeopleModal()">People</button>
           <button class="btn btn-primary" onclick="showExpenseModal()">+ Add Expense</button>
@@ -1210,6 +1237,7 @@ async function openTrip(id) {
   document.getElementById('headerActions').innerHTML=`
     <button class="btn btn-outline btn-sm" onclick="showPeopleModal()">People</button>
     <button class="btn btn-primary" onclick="showExpenseModal()">+ Add Expense</button>`;
+  // note: who-selector lives in the static HTML trip-header-actions, not headerActions
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===0));
   document.getElementById('tabLedger').style.display='';
   document.getElementById('tabBalances').style.display='none';
@@ -1218,6 +1246,49 @@ async function openTrip(id) {
   const trip=state.trips.find(t=>t.id===id);
   if(!trip||!trip._loaded) await loadTrip(id);
   renderAll();
+}
+
+
+// ── Who am I? ──────────────────────────────────────────────
+function getWho(tripId) {
+  return localStorage.getItem('kitty_who_' + (tripId||state.currentTripId)) || '';
+}
+function setWho(tripId, name) {
+  localStorage.setItem('kitty_who_' + tripId, name);
+}
+
+function renderWhoSelector() {
+  const t = currentTrip(); if(!t) return;
+  const sel = document.getElementById('whoSelect');
+  const av  = document.getElementById('whoAv');
+  const wrap = document.getElementById('whoWrap');
+  if(!sel) return;
+
+  const current = getWho(t.id);
+  sel.innerHTML = '<option value="">Who are you?</option>' +
+    t.people.map(p =>
+      `<option value="${esc(p)}" ${p===current?'selected':''}>${esc(p)}</option>`
+    ).join('');
+
+  // Update avatar dot
+  if(current && t.people.includes(current)) {
+    av.style.background = pColor(current, t.people);
+    av.textContent = initials(current);
+    wrap.title = 'Viewing as ' + current;
+  } else {
+    av.style.background = 'var(--ink-4)';
+    av.textContent = '?';
+    wrap.title = 'Who are you?';
+  }
+}
+
+function onWhoChange() {
+  const t = currentTrip(); if(!t) return;
+  const sel = document.getElementById('whoSelect');
+  const name = sel.value;
+  setWho(t.id, name);
+  renderWhoSelector();
+  if(name) toast('Viewing as ' + name, 'success', 1800);
 }
 
 function renderAll() {
@@ -1272,6 +1343,7 @@ function renderAll() {
   const coverEl=document.getElementById('tripCoverPhoto');
   if(coverEl){ if(t.coverPhoto){ coverEl.src=t.coverPhoto; coverEl.style.display='block'; } else { coverEl.style.display='none'; } }
   renderProgress(); renderExpenses(); renderBalances(); renderSettlements(); renderHistory();
+  renderWhoSelector();
 }
 
 function renderProgress() {
@@ -1712,7 +1784,10 @@ function showEditExpenseModal(id) {
   document.querySelectorAll('#editCatGrid .cat-chip').forEach(c=>c.classList.remove('selected'));
   const catEl=document.querySelector(`#editCatGrid [data-cat="${exp.category}"]`);
   if(catEl) catEl.classList.add('selected');
-  document.getElementById('editWho').innerHTML=t.people.map(p=>`<option>${esc(p)}</option>`).join('');
+  const _cw = getWho(t.id);
+  document.getElementById('editWho').innerHTML=t.people.map(p=>
+    `<option${p===_cw?' selected':''}>${esc(p)}</option>`
+  ).join('');
   document.getElementById('editPaidBy').innerHTML=t.people.map(p=>`<option${p===exp.paidBy?' selected':''}>${esc(p)}</option>`).join('');
   document.getElementById('editSplit').innerHTML=t.people.map(p=>`
     <div class="p-chip${exp.splitBetween.includes(p)?' selected':''}" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected')">
@@ -2021,7 +2096,10 @@ function showExpenseModal(){
   currentPhoto=null;
   document.querySelectorAll('#catGrid .cat-chip').forEach(c=>c.classList.remove('selected'));
   document.querySelector('[data-cat="food"]').classList.add('selected');
-  document.getElementById('ePaidBy').innerHTML=t.people.map(p=>`<option>${esc(p)}</option>`).join('');
+  const currentUser = getWho(t.id);
+  document.getElementById('ePaidBy').innerHTML=t.people.map(p=>
+    `<option${p===currentUser?' selected':''}>${esc(p)}</option>`
+  ).join('');
   document.getElementById('eSplit').innerHTML=t.people.map(p=>`
     <div class="p-chip selected" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected')">
       <span class="p-chip-dot" style="background:${pColor(p,t.people)}"></span>${esc(p)}
@@ -2061,7 +2139,7 @@ async function saveExpense(){
   if(!splitBetween.length){alert('Select at least one person to split with.');return;}
   const exp={id:uid(),desc,amount,paidBy,date,note,category,splitBetween,photo:currentPhoto,paidSettlements:{}};
   t.expenses.push(exp);
-  logHistory(t,'added',paidBy,desc,amount);
+  logHistory(t,'added', getWho(t.id)||paidBy, desc, amount);
   closeModal('modalExpense'); renderAll();
   await save(async()=>{
     let photoKey = null;
