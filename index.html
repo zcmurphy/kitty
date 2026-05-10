@@ -1013,17 +1013,14 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'e15c2ed';
+const REV = '744edb5';
 
-// ── Invite token auth ──
+// ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
   return localStorage.getItem('kitty_token_'+tripId) || '';
 }
 function setToken(tripId, token) {
   localStorage.setItem('kitty_token_'+tripId, token);
-}
-function authHeaders(tripId) {
-  return { 'Content-Type':'application/json', 'X-Invite-Token': getToken(tripId) };
 }
 
 // ── local cache ──
@@ -1051,7 +1048,11 @@ async function api(method, path, body, tripId) {
   setSyncDot('syncing');
   try {
     const token = tripId ? getToken(tripId) : (state.currentTripId ? getToken(state.currentTripId) : '');
-    const opts = { method, headers: {'Content-Type':'application/json', 'X-Invite-Token': token} };
+    const opts = {
+      method,
+      credentials: 'include',   // send/receive HttpOnly session cookie
+      headers: { 'Content-Type':'application/json', 'X-Invite-Token': token }
+    };
     if(body) opts.body = JSON.stringify(body);
     const r = await fetch(API+path, opts);
     if(!r.ok) { const e=await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
@@ -1074,6 +1075,7 @@ async function uploadPhotoToR2(dataUrl, tripId) {
     const token = getToken(tripId);
     const r = await fetch(API+'/photos?tripId='+tripId, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': ct, 'X-Invite-Token': token },
       body: binary,
     });
@@ -1094,14 +1096,25 @@ function photoUrl(keyOrData) {
   return API+'/photos/'+keyOrData;
 }
 
-// ── load all trips from API on startup ──
+// ── load session + trips from API on startup ──
 async function loadFromAPI() {
   const loader=document.getElementById('screenLoader');
   loader.classList.remove('hidden');
   try {
-    const trips = await api('GET', '/trips');
-    // For each trip card we have summary data; full data loads on openTrip
-    state.trips = trips.map(t=>({
+    // Fetch session — server sets HttpOnly cookie automatically
+    const sess = await api('GET', '/session');
+    // Restore who-am-I from session into localStorage (fast local reads)
+    if(sess.whoByTrip) {
+      Object.entries(sess.whoByTrip).forEach(([tid,who])=>{
+        localStorage.setItem('kitty_who_'+tid, who);
+      });
+    }
+    // Store any invite tokens from session into localStorage fallback
+    if(sess.tripTokens) {
+      Object.entries(sess.tripTokens).forEach(([tid,tok])=>setToken(tid,tok));
+    }
+    // Map trip summaries
+    state.trips = (sess.trips||[]).map(t=>({
       id: t.id, name: t.name,
       startDate: t.start_date||'', endDate: t.end_date||'',
       icon: t.icon||'', coverPhoto: t.cover_photo||null,
@@ -1111,7 +1124,7 @@ async function loadFromAPI() {
     lsSave();
   } catch(e) {
     const msg = e.message?.includes('401')
-      ? 'Auth error — check your invite token'
+      ? 'Session expired — please rejoin via invite link'
       : 'Could not reach server — showing cached data';
     toast(msg, 'error', 4000);
     lsLoad();
@@ -1130,7 +1143,9 @@ async function loadTrip(id) {
     // Store bootstrap token if server issued one for this trip
     if (data.bootstrapToken) {
       setToken(id, data.bootstrapToken);
-      toast('Access granted — invite link created', 'success');
+      // Also register with session on server
+      api('PATCH', '/session', { tripId: id, token: data.bootstrapToken }).catch(()=>{});
+      toast('Access granted', 'success', 1800);
     }
     const trip = {
       id: data.id, name: data.name,
@@ -1288,7 +1303,11 @@ function onWhoChange() {
   const name = sel.value;
   setWho(t.id, name);
   renderWhoSelector();
-  if(name) toast('Viewing as ' + name, 'success', 1800);
+  if(name) {
+    toast('Viewing as ' + name, 'success', 1800);
+    // Persist to server session (fire-and-forget)
+    api('PATCH', '/session', { whoByTrip: { [t.id]: name } }).catch(()=>{});
+  }
 }
 
 function renderAll() {
@@ -1684,8 +1703,9 @@ async function checkJoinLink() {
   const tripId = params.get('trip');
   const token  = params.get('token');
   if(!tripId || !token) return false;
-  // Store the token
+  // Store the token locally and in server session
   setToken(tripId, token);
+  await api('PATCH', '/session', { tripId, token }).catch(()=>{});
   // Clear URL params without reload
   window.history.replaceState({}, '', window.location.pathname);
   toast('Joined trip!', 'success');
