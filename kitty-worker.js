@@ -6,7 +6,7 @@
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV          = '744edb5';
+const REV = '30edf8d';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -147,6 +147,26 @@ function parseRoute(url) {
   return { resource: parts[1], id: parts[2], sub: parts[3], subId: parts[4] };
 }
 
+
+// ── Short join code helpers ───────────────────────────────────
+function generateCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/1/I
+  let code = '';
+  const arr = new Uint8Array(6);
+  crypto.getRandomValues(arr);
+  arr.forEach(b => code += chars[b % chars.length]);
+  return code;
+}
+
+async function uniqueCode(env) {
+  for (let attempts = 0; attempts < 10; attempts++) {
+    const code = generateCode();
+    const existing = await env.DB.prepare('SELECT id FROM trips WHERE code=?').bind(code).first();
+    if (!existing) return code;
+  }
+  throw new Error('Could not generate unique code');
+}
+
 // ─────────────────────────────────────────────────────────────
 export default {
   async fetch(req, env) {
@@ -226,6 +246,23 @@ export default {
       // ── VERSION ────────────────────────────────────────────
       if (resource === 'version') return respond({ rev: REV, ok: true });
 
+
+      // ── JOIN by short code ─────────────────────────────────
+      if (resource === 'join' && id) {
+        const code = id.toUpperCase();
+        const trip = await env.DB.prepare(
+          `SELECT id, name, start_date, end_date, icon FROM trips WHERE code=?`
+        ).bind(code).first();
+        if (!trip) return respond({ error: 'Trip not found — check your code' }, 404);
+
+        // Issue an invite token and store in session
+        const token = await createInviteToken(env, trip.id, 'join:'+code);
+        sess.tripTokens = { ...sess.tripTokens, [trip.id]: token };
+        await saveSession(env, sid, sess);
+
+        return respond({ ok: true, tripId: trip.id, token, trip });
+      }
+
       // ── TRIPS ──────────────────────────────────────────────
       if (resource === 'trips') {
 
@@ -235,7 +272,7 @@ export default {
           if (!tripIds.length) return respond([]);
           const placeholders = tripIds.map(()=>'?').join(',');
           const { results } = await env.DB.prepare(
-            `SELECT id, name, start_date, end_date, icon,
+            `SELECT id, name, start_date, end_date, icon, code,
               (SELECT COUNT(*) FROM expenses WHERE trip_id=t.id) as expense_count
              FROM trips t WHERE id IN (${placeholders}) ORDER BY created_at DESC`
           ).bind(...tripIds).all();
@@ -284,9 +321,10 @@ export default {
         if (method === 'POST' && !id) {
           const b      = await req.json();
           const tripId = b.id || crypto.randomUUID();
+          const code = await uniqueCode(env);
           await env.DB.prepare(
-            `INSERT INTO trips (id,name,start_date,end_date,icon,cover_photo,created_at) VALUES (?,?,?,?,?,?,?)`
-          ).bind(tripId, b.name, b.startDate||null, b.endDate||null, b.icon||null, null, new Date().toISOString()).run();
+            `INSERT INTO trips (id,name,start_date,end_date,icon,cover_photo,code,created_at) VALUES (?,?,?,?,?,?,?,?)`
+          ).bind(tripId, b.name, b.startDate||null, b.endDate||null, b.icon||null, null, code, new Date().toISOString()).run();
 
           for (const name of (b.people||[])) {
             await env.DB.prepare(`INSERT OR IGNORE INTO people (id,trip_id,name,created_at) VALUES (?,?,?,?)`)
@@ -298,7 +336,7 @@ export default {
           sess.tripTokens = { ...sess.tripTokens, [tripId]: token };
           await saveSession(env, sid, sess);
 
-          return respond({ ok: true, tripId, token });
+          return respond({ ok: true, tripId, token, code });
         }
 
         // UPDATE

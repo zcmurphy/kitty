@@ -636,6 +636,29 @@
   }
   .who-select-wrap select:focus { outline: none; }
 
+
+  /* ── JOIN MODAL ── */
+  .code-input {
+    font-family: 'Roboto Mono', monospace !important;
+    font-size: 28px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.25em !important;
+    text-align: center !important;
+    text-transform: uppercase;
+    padding: 14px 12px !important;
+    border-radius: 10px !important;
+  }
+  .code-input::placeholder { color: var(--ink-4); letter-spacing: 0.15em; font-size: 20px; }
+  .trip-code-badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--surface-2); border: 1.5px solid var(--border);
+    border-radius: 8px; padding: 6px 12px;
+    font-family: 'Roboto Mono', monospace; font-size: 14px;
+    font-weight: 700; letter-spacing: 0.15em; color: var(--ink-2);
+  }
+  .trip-code-copy { background:none; border:none; cursor:pointer; color:var(--ink-3); font-size:14px; padding:0 2px; transition:color 0.15s; }
+  .trip-code-copy:hover { color: var(--ink); }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -658,7 +681,8 @@
       <div class="logo-dot"></div>
       Kitty<span class="sync-dot" id="syncDot" title="Sync status"></span> <span id="revBadge" style="font-family:'Roboto Mono',monospace;font-size:9px;color:rgba(255,255,255,0.25);letter-spacing:.04em"></span>
     </div>
-    <div id="headerActions">
+    <div id="headerActions" style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="showJoinModal()" style="color:white;border-color:rgba(255,255,255,0.3)">Join a Trip</button>
       <button class="btn btn-primary btn-sm" onclick="showNewTripModal()">+ New Trip</button>
     </div>
   </header>
@@ -687,6 +711,10 @@
       <div class="trip-header">
         <div>
           <div class="trip-title-row"><span id="tripTitleIcon" class="trip-header-icon"></span><div class="trip-title" id="tripTitle"></div></div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <div class="trip-meta-line" id="tripMeta"></div>
+            <span id="tripCodeBadge" style="font-family:'Roboto Mono',monospace;font-size:10px;font-weight:700;letter-spacing:.12em;background:var(--surface-2);border:1.5px solid var(--border);border-radius:5px;padding:2px 7px;color:var(--ink-3)"></span>
+          </div>
           <div class="trip-meta-line" id="tripMeta"></div>
         </div>
         <div class="trip-header-actions">
@@ -948,6 +976,15 @@
         <div class="field" style="margin:0"><input type="text" id="stName" placeholder="Trip name"></div>
       </div>
 
+      <div style="margin-bottom:18px">
+        <div class="settings-section-label">Join Code</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="trip-code-badge" id="settingsCodeBadge">——————</div>
+          <button class="trip-code-copy" id="settingsCodeCopy" onclick="copyTripCode()" title="Copy code">⎘ Copy</button>
+        </div>
+        <div style="font-size:11px;color:var(--ink-3);margin-top:6px">Share this code so others can join the trip.</div>
+      </div>
+
       <div class="field-row" style="margin-bottom:18px">
         <div>
           <div class="settings-section-label">Start Date</div>
@@ -999,6 +1036,31 @@
   </div>
 </div>
 
+<!-- MODAL: JOIN TRIP -->
+<div class="modal-backdrop hidden" id="modalJoin">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <div class="modal-title">Join a Trip</div>
+      <button class="modal-close" onclick="closeModal('modalJoin')">✕</button>
+    </div>
+    <div class="modal-divider"></div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--ink-3);margin-bottom:16px;line-height:1.6">Enter the 6-character trip code shared with you by the trip organiser.</p>
+      <div class="field" style="margin-bottom:8px">
+        <input class="code-input" type="text" id="joinCodeInput"
+          maxlength="6" placeholder="ABC123"
+          oninput="this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'')"
+          onkeydown="if(event.key==='Enter')doJoinTrip()">
+      </div>
+      <div id="joinError" style="font-size:12px;color:var(--red);min-height:18px;text-align:center"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modalJoin')">Cancel</button>
+      <button class="btn btn-primary" id="joinBtn" onclick="doJoinTrip()">Join Trip →</button>
+    </div>
+  </div>
+</div>
+
 <!-- LIGHTBOX -->
 <div class="lightbox hidden" id="lightbox" onclick="closeLightbox()">
   <img id="lightboxImg" src="" alt="Receipt">
@@ -1013,7 +1075,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '744edb5';
+const REV = '30edf8d';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1115,7 +1177,7 @@ async function loadFromAPI() {
     }
     // Map trip summaries
     state.trips = (sess.trips||[]).map(t=>({
-      id: t.id, name: t.name,
+      id: t.id, name: t.name, code: t.code||'',
       startDate: t.start_date||'', endDate: t.end_date||'',
       icon: t.icon||'', coverPhoto: t.cover_photo||null,
       people: [], expenses: [], history: [], settledPayments: [],
@@ -1148,7 +1210,7 @@ async function loadTrip(id) {
       toast('Access granted', 'success', 1800);
     }
     const trip = {
-      id: data.id, name: data.name,
+      id: data.id, name: data.name, code: data.code||'',
       startDate: data.start_date||'', endDate: data.end_date||'',
       icon: data.icon||'', coverPhoto: data.cover_photo||null,
       people: data.people||[],
@@ -1356,7 +1418,9 @@ function renderAll() {
     if(settleLabel) settleLabel.textContent = settledAmt>0.005&&totalOwed<0.01 ? 'All settled ✓' : 'Paid back';
   }
   document.getElementById('tripTitle').textContent=t.name;
-  document.getElementById('tripMeta').textContent=`${t.startDate||''}${t.endDate?' – '+t.endDate:''} · ${t.people.length} person${t.people.length!==1?'s':''}`;
+  document.getElementById('tripMeta').textContent=`${t.startDate||''}${t.endDate?' – '+t.endDate:''} · ${t.people.length} person${t.people.length!==1?'s':''}` ;
+  const codeBadge=document.getElementById('tripCodeBadge');
+  if(codeBadge) codeBadge.textContent=t.code||'';
   const iconEl=document.getElementById('tripTitleIcon');
   if(iconEl) iconEl.textContent=t.icon||'';
   const coverEl=document.getElementById('tripCoverPhoto');
@@ -1590,6 +1654,12 @@ function showTripSettings() {
     document.getElementById('coverUploadZone').style.display = '';
   }
   document.getElementById('coverPhotoInput').value = '';
+  // Show trip code
+  const _trip=currentTrip();
+  const cb=document.getElementById('settingsCodeBadge');
+  const ccopy=document.getElementById('settingsCodeCopy');
+  if(cb) cb.textContent=_trip?.code||'—';
+  if(ccopy) ccopy.style.display=_trip?.code?'':'none';
   loadInvites();
   // reset delete zone in case it was expanded
   const dz=document.getElementById('deleteTripZone');
@@ -1716,6 +1786,54 @@ async function checkJoinLink() {
   const trip = state.trips.find(t=>t.id===tripId);
   if(trip) openTrip(tripId);
   return true;
+}
+
+
+function showJoinModal() {
+  document.getElementById('joinCodeInput').value = '';
+  document.getElementById('joinError').textContent = '';
+  const btn = document.getElementById('joinBtn');
+  btn.textContent = 'Join Trip →'; btn.disabled = false;
+  openModal('modalJoin');
+  setTimeout(()=>document.getElementById('joinCodeInput').focus(), 120);
+}
+
+async function doJoinTrip() {
+  const code = document.getElementById('joinCodeInput').value.trim().toUpperCase();
+  const errEl = document.getElementById('joinError');
+  const btn   = document.getElementById('joinBtn');
+  if (code.length < 2) { errEl.textContent = 'Please enter a trip code.'; return; }
+  errEl.textContent = '';
+  btn.textContent = 'Joining…'; btn.disabled = true;
+  try {
+    const res = await api('GET', '/join/' + code);
+    if (res.error) { errEl.textContent = res.error; btn.textContent='Join Trip →'; btn.disabled=false; return; }
+    // Store token
+    setToken(res.tripId, res.token);
+    await api('PATCH', '/session', { tripId: res.tripId, token: res.token }).catch(()=>{});
+    // Add trip to local state if not already there
+    if (!state.trips.find(t=>t.id===res.tripId)) {
+      state.trips.push({
+        id: res.tripId, name: res.trip.name, code,
+        startDate: res.trip.start_date||'', endDate: res.trip.end_date||'',
+        icon: res.trip.icon||'', coverPhoto: null,
+        people: [], expenses: [], history: [], settledPayments: [],
+        _loaded: false
+      });
+    }
+    lsSave();
+    closeModal('modalJoin');
+    toast('Joined ' + res.trip.name + '!', 'success');
+    openTrip(res.tripId);
+  } catch(e) {
+    errEl.textContent = e.message?.includes('404') ? 'Trip not found — check the code.' : 'Could not join: ' + e.message;
+    btn.textContent = 'Join Trip →'; btn.disabled = false;
+  }
+}
+
+function copyTripCode() {
+  const t = currentTrip(); if(!t?.code) return;
+  navigator.clipboard.writeText(t.code).then(()=>toast('Code copied: ' + t.code, 'success', 2000)).catch(()=>{});
 }
 
 
@@ -2058,12 +2176,13 @@ async function createTrip(){
   const name=document.getElementById('nTripName').value.trim();
   if(!name){alert('Please enter a trip name.');return;}
   const people=document.getElementById('nTripPeople').value.split(',').map(s=>s.trim()).filter(Boolean);
-  const trip={id:uid(),name,startDate:document.getElementById('nTripStart').value,endDate:document.getElementById('nTripEnd').value,people,expenses:[],history:[],settledPayments:[],_loaded:true};
+  const trip={id:uid(),name,code:'',startDate:document.getElementById('nTripStart').value,endDate:document.getElementById('nTripEnd').value,people,expenses:[],history:[],settledPayments:[],_loaded:true};
   state.trips.push(trip);
   closeModal('modalNewTrip');
   await save(async()=>{
     const res = await api('POST','/trips',{id:trip.id,name,startDate:trip.startDate,endDate:trip.endDate,people});
     if(res.token) setToken(trip.id, res.token);
+    if(res.code) { trip.code=res.code; lsSave(); }
   });
   toast('Trip created', 'success');
   openTrip(trip.id);
