@@ -696,7 +696,10 @@
           <div class="home-heading">Your Trips</div>
           <div class="home-sub">Track shared expenses, settle up with the group. <span id="homeRevBadge" style="font-family:'Roboto Mono',monospace;font-size:10px;color:var(--ink-4);letter-spacing:.04em;margin-left:4px"></span></div>
         </div>
-        <button class="btn btn-primary" onclick="showNewTripModal()">+ New Trip</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline" onclick="showJoinModal()">Join a Trip</button>
+          <button class="btn btn-primary" onclick="showNewTripModal()">+ New Trip</button>
+        </div>
       </div>
       <div class="trips-grid" id="tripsGrid"></div>
     </div>

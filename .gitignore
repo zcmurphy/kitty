@@ -2,3 +2,5 @@ backup
 config
 .wrangler
 wrangler.toml
+*.toml
+*.toml
