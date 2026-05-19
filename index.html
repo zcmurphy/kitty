@@ -659,6 +659,24 @@
   .trip-code-copy { background:none; border:none; cursor:pointer; color:var(--ink-3); font-size:14px; padding:0 2px; transition:color 0.15s; }
   .trip-code-copy:hover { color: var(--ink); }
 
+
+  /* ── TRIP CARD COVER PHOTO ── */
+  .trip-card-cover {
+    width: calc(100% + 40px);
+    height: 130px;
+    object-fit: cover;
+    margin: -20px -20px 16px -20px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    display: block;
+  }
+  .trip-card.has-cover .trip-card-header {
+    margin-bottom: 10px;
+  }
+  .trip-card.has-cover .trip-card-icon {
+    background: rgba(255,255,255,0.9) !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+  }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1078,7 +1096,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '30edf8d';
+const REV = '2b03970';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1182,7 +1200,7 @@ async function loadFromAPI() {
     state.trips = (sess.trips||[]).map(t=>({
       id: t.id, name: t.name, code: t.code||'',
       startDate: t.start_date||'', endDate: t.end_date||'',
-      icon: t.icon||'', coverPhoto: t.cover_photo||null,
+      icon: t.icon||'', coverPhoto: t.cover_photo||t.coverPhoto||null,
       people: [], expenses: [], history: [], settledPayments: [],
       _loaded: false
     }));
@@ -1286,7 +1304,13 @@ function renderHome() {
     const card=document.createElement('div');
     card.className='trip-card';
     const avatars=trip.people.slice(0,5).map(p=>`<div class="av-sm" style="background:${pColor(p,trip.people)}">${initials(p)}</div>`).join('');
+    const hasCover = !!(trip.coverPhoto);
+    if(hasCover) card.classList.add('has-cover');
+    const coverSrc = trip.coverPhoto
+      ? (trip.coverPhoto.startsWith('data:') ? trip.coverPhoto : photoUrl(trip.coverPhoto))
+      : null;
     card.innerHTML=`
+      ${coverSrc ? `<img class="trip-card-cover" src="${coverSrc}" alt="Trip cover">` : ''}
       <div class="trip-card-header">
         <div class="trip-card-icon" style="background:${pColor(trip.people[0]||'A',trip.people||['A'])}18">${trip.icon||tripIcon(i)}</div>
         <div class="trip-card-badge">${trip.people.length} people</div>
