@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 9a6170e
+//  Kitty API Worker  rev: 51eb862
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '9a6170e';
+const REV = '51eb862';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -15,8 +15,8 @@ function corsHeaders(req) {
   const origin = req.headers.get('Origin') || '*';
   return {
     'Access-Control-Allow-Origin':      origin,
-    'Access-Control-Allow-Methods':     'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers':     'Content-Type, Authorization, X-Invite-Token',
+    'Access-Control-Allow-Methods':     'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers':     'Content-Type, Authorization, X-Invite-Token, Cookie',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -211,18 +211,16 @@ export default {
           });
         }
 
-        // PATCH session — update whoByTrip or add a token
+        // PATCH session — update whoByTrip or register a token
+        // Note: we do NOT validate the token here — it gets validated
+        // on every actual trip access via validateAccess(). The session
+        // is just a convenience store so we don't lose tokens on refresh.
         if (method === 'PATCH') {
           const b = await req.json();
           if (b.whoByTrip) {
             sess.whoByTrip = { ...sess.whoByTrip, ...b.whoByTrip };
           }
           if (b.tripId && b.token) {
-            // Validate the token before storing
-            if (env.KV) {
-              const stored = await env.KV.get(`invite:${b.tripId}:${b.token}`).catch(()=>null);
-              if (!stored) return respond({ error: 'Invalid token' }, 401);
-            }
             sess.tripTokens = { ...sess.tripTokens, [b.tripId]: b.token };
           }
           sess.lastSeen = new Date().toISOString();

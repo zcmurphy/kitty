@@ -13,7 +13,7 @@ bucket_name = "kitty-assets"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "69581fede557442db8dc5a92b0dce5cf"
 
 [vars]
 KITTY_SECRET = "REPLACE_WITH_A_STRONG_SECRET"
