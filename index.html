@@ -1096,7 +1096,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '2b03970';
+const REV = '9a6170e';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1183,29 +1183,76 @@ function photoUrl(keyOrData) {
 async function loadFromAPI() {
   const loader=document.getElementById('screenLoader');
   loader.classList.remove('hidden');
+
+  // ── Step 1: collect all tokens stored locally ──────────────
+  // These are the ground truth on this browser regardless of
+  // what the server session knows about.
+  function localTokenMap() {
+    const map = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('kitty_token_')) {
+        const tripId = k.replace('kitty_token_', '');
+        const tok = localStorage.getItem(k);
+        if (tripId && tok) map[tripId] = tok;
+      }
+    }
+    return map;
+  }
+
   try {
-    // Fetch session — server sets HttpOnly cookie automatically
+    // ── Step 2: fetch server session ──────────────────────────
     const sess = await api('GET', '/session');
-    // Restore who-am-I from session into localStorage (fast local reads)
-    if(sess.whoByTrip) {
-      Object.entries(sess.whoByTrip).forEach(([tid,who])=>{
-        localStorage.setItem('kitty_who_'+tid, who);
+
+    // ── Step 3: re-register any locally-known tokens that the
+    //   server session is missing (survives cookie loss on refresh) ──
+    const localTokens = localTokenMap();
+    const serverTokenIds = new Set(Object.keys(sess.tripTokens || {}));
+    const missing = Object.entries(localTokens).filter(([tid]) => !serverTokenIds.has(tid));
+    if (missing.length) {
+      await Promise.all(missing.map(([tripId, token]) =>
+        api('PATCH', '/session', { tripId, token }).catch(() => {})
+      ));
+      // Re-fetch session now that we've re-registered
+      const refreshed = await api('GET', '/session').catch(() => sess);
+      Object.assign(sess, refreshed);
+    }
+
+    // ── Step 4: restore who-am-I from session ─────────────────
+    if (sess.whoByTrip) {
+      Object.entries(sess.whoByTrip).forEach(([tid, who]) => {
+        localStorage.setItem('kitty_who_' + tid, who);
       });
     }
-    // Store any invite tokens from session into localStorage fallback
-    if(sess.tripTokens) {
-      Object.entries(sess.tripTokens).forEach(([tid,tok])=>setToken(tid,tok));
+
+    // ── Step 5: sync all session tokens back to localStorage ──
+    if (sess.tripTokens) {
+      Object.entries(sess.tripTokens).forEach(([tid, tok]) => setToken(tid, tok));
     }
-    // Map trip summaries
-    state.trips = (sess.trips||[]).map(t=>({
-      id: t.id, name: t.name, code: t.code||'',
-      startDate: t.start_date||'', endDate: t.end_date||'',
-      icon: t.icon||'', coverPhoto: t.cover_photo||t.coverPhoto||null,
+
+    // ── Step 6: build trip list — union of server + local cache ──
+    // Server trips (authoritative names/dates)
+    const serverTrips = (sess.trips || []).map(t => ({
+      id: t.id, name: t.name, code: t.code || '',
+      startDate: t.start_date || '', endDate: t.end_date || '',
+      icon: t.icon || '', coverPhoto: t.cover_photo || t.coverPhoto || null,
       people: [], expenses: [], history: [], settledPayments: [],
       _loaded: false
     }));
+
+    // Merge: start with server trips, then add any local-only trips
+    // (trips where we have a token locally but server didn't return them yet)
+    const serverIds = new Set(serverTrips.map(t => t.id));
+    const localOnly = state.trips.filter(t => !serverIds.has(t.id) && localTokens[t.id]);
+
+    state.trips = [
+      ...serverTrips,
+      ...localOnly.map(t => ({ ...t, _loaded: false }))
+    ];
+
     lsSave();
   } catch(e) {
+    // ── Fallback: use localStorage entirely ───────────────────
     const msg = e.message?.includes('401')
       ? 'Session expired — please rejoin via invite link'
       : 'Could not reach server — showing cached data';
