@@ -1096,7 +1096,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '51eb862';
+const REV = '1a21e59';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1472,24 +1472,20 @@ function renderAll() {
   document.getElementById('sumCount').textContent=t.expenses.length;
   document.getElementById('sumPeople').textContent=t.people.length;
   document.getElementById('sumPer').textContent=t.people.length?fmt(total/t.people.length):'$0';
-  // Tally individual expense settlements
-  let settledAmt=0;
-  t.expenses.forEach(exp=>{
-    if(exp.paidSettlements){
-      const share=exp.splitBetween.length?exp.amount/exp.splitBetween.length:0;
-      Object.values(exp.paidSettlements).forEach(s=>{
-        settledAmt+=(typeof s==='object'?s.amt:share);
-      });
-    }
-  });
-  // Also tally trip-level settled payments
-  (t.settledPayments||[]).forEach(sp=>{ settledAmt+=sp.amt||0; });
+  // Use the settlement engine to compute outstanding vs settled amounts
+  const _net = computeNet();
+  const _outstanding = settleDebts(_net);
+  const _allSettlements = settleDebts(computeNetRaw()); // raw without trip-level payments
+  const _settledCount = (_allSettlements).filter(s => {
+    const sid = 'settle-'+s.from.replace(/\s+/g,'_')+'-'+s.to.replace(/\s+/g,'_');
+    return (t.settledPayments||[]).some(p=>p.id===sid);
+  }).length;
+  const _totalCount = _allSettlements.length;
   const settleCard=document.getElementById('sumSettled');
   if(settleCard) {
-    settleCard.textContent = settledAmt>0.005 ? fmt(settledAmt) : '—';
+    settleCard.textContent = _totalCount===0 ? '—' : `${_settledCount}/${_totalCount}`;
     const settleLabel=document.getElementById('sumSettledLabel');
-    const totalOwed=Object.values(computeNet()).filter(n=>n<-0.005).reduce((s,n)=>s+Math.abs(n),0);
-    if(settleLabel) settleLabel.textContent = settledAmt>0.005&&totalOwed<0.01 ? 'All settled ✓' : 'Paid back';
+    if(settleLabel) settleLabel.textContent = _totalCount>0&&_settledCount===_totalCount ? 'All settled ✓' : 'Settled';
   }
   document.getElementById('tripTitle').textContent=t.name;
   document.getElementById('tripMeta').textContent=`${t.startDate||''}${t.endDate?' – '+t.endDate:''} · ${t.people.length} person${t.people.length!==1?'s':''}` ;
@@ -2075,105 +2071,180 @@ function delExp(id) {
   });
 }
 
-function computeNet() {
-  const t=currentTrip(); const net={};
-  t.people.forEach(p=>net[p]=0);
-  t.expenses.forEach(exp=>{
-    net[exp.paidBy]=(net[exp.paidBy]||0)+exp.amount;
-    const share=exp.splitBetween.length?exp.amount/exp.splitBetween.length:0;
-    exp.splitBetween.forEach(p=>{ net[p]=(net[p]||0)-share; });
-    // If a person has settled their individual share, it cancels their debt
-    // and reduces what the payer is still owed
-    if(exp.paidSettlements){
-      Object.keys(exp.paidSettlements).forEach(person=>{
-        const s=exp.paidSettlements[person];
-        const amt=typeof s==='object'?s.amt:share;
-        net[person]=(net[person]||0)+amt;       // debtor paid back → less owed
-        net[exp.paidBy]=(net[exp.paidBy]||0)-amt; // payer received it back
-      });
-    }
+
+// computeNetRaw — balances before trip-level payments (for summary card counting)
+function computeNetRaw() {
+  const t = currentTrip();
+  const net = {};
+  t.people.forEach(p => net[p] = 0);
+  t.expenses.forEach(exp => {
+    const share = exp.splitBetween.length ? dsRound(exp.amount / exp.splitBetween.length) : 0;
+    exp.splitBetween.forEach(person => {
+      if (person === exp.paidBy) return;
+      const ps = exp.paidSettlements && exp.paidSettlements[person];
+      const settledAmt = ps ? (typeof ps === 'object' ? dsRound(ps.amt) : share) : 0;
+      const outstanding = dsRound(share - settledAmt);
+      if (outstanding > 0.005) {
+        net[person]   = dsRound((net[person]   || 0) - outstanding);
+        net[exp.paidBy] = dsRound((net[exp.paidBy] || 0) + outstanding);
+      }
+    });
   });
   return net;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Debt Settlement Engine — ported from debtSettlement.ts
+// Greedy O(n² log n) algorithm minimising total payments
+// ─────────────────────────────────────────────────────────────
+
+function dsRound(n) { return Math.round(n * 100) / 100; }
+
+// Build Transaction list from trip expenses (even-split model)
+// Honours per-expense paidSettlements as already-cleared debts
+function buildTransactions() {
+  const t = currentTrip();
+  const txns = [];
+  t.expenses.forEach(exp => {
+    const share = exp.splitBetween.length ? dsRound(exp.amount / exp.splitBetween.length) : 0;
+    exp.splitBetween.forEach(person => {
+      if (person === exp.paidBy) return; // payer doesn't owe themselves
+      // Check if this person's share is already individually settled
+      const ps = exp.paidSettlements && exp.paidSettlements[person];
+      const settledAmt = ps ? (typeof ps === 'object' ? dsRound(ps.amt) : share) : 0;
+      const outstanding = dsRound(share - settledAmt);
+      if (outstanding > 0.005) {
+        txns.push({ debtor: person, creditor: exp.paidBy, amount: outstanding });
+      }
+    });
+  });
+  // Also account for trip-level settled payments (they've already transferred cash)
+  (t.settledPayments || []).forEach(sp => {
+    // A settled payment means `from` already paid `to` — cancel that debt
+    txns.push({ debtor: sp.to, creditor: sp.from, amount: sp.amt });
+  });
+  return txns;
+}
+
+// computeBalances: positive = owed money, negative = owes money
+function computeNet() {
+  const t = currentTrip();
+  const net = {};
+  t.people.forEach(p => net[p] = 0);
+  const txns = buildTransactions();
+  txns.forEach(({ debtor, creditor, amount }) => {
+    net[debtor]   = dsRound((net[debtor]   || 0) - amount);
+    net[creditor] = dsRound((net[creditor] || 0) + amount);
+  });
+  return net;
+}
+
+// settleDebts: greedy — largest debtor meets largest creditor each round
+function settleDebts(net) {
+  const settlements = [];
+  const debtors   = [];
+  const creditors = [];
+  Object.entries(net).forEach(([name, balance]) => {
+    const r = dsRound(balance);
+    if (r < -0.005) debtors.push({ name, amount: -r });
+    if (r >  0.005) creditors.push({ name, amount: r });
+  });
+  while (debtors.length && creditors.length) {
+    debtors.sort((a, b) => b.amount - a.amount);
+    creditors.sort((a, b) => b.amount - a.amount);
+    const debtor   = debtors[0];
+    const creditor = creditors[0];
+    const amt = dsRound(Math.min(debtor.amount, creditor.amount));
+    settlements.push({ from: debtor.name, to: creditor.name, amt });
+    debtor.amount   = dsRound(debtor.amount   - amt);
+    creditor.amount = dsRound(creditor.amount - amt);
+    if (debtor.amount   < 0.005) debtors.shift();
+    if (creditor.amount < 0.005) creditors.shift();
+  }
+  return settlements;
+}
+
 function renderBalances() {
-  const t=currentTrip(); const net=computeNet();
-  const grid=document.getElementById('balanceGrid'); grid.innerHTML='';
-  if (!t.people.length) { grid.innerHTML=`<div style="color:var(--ink-3);font-size:13px">Add some people to see balances.</div>`; return; }
-  t.people.forEach(p=>{
-    const n=net[p]||0;
-    const div=document.createElement('div'); div.className='balance-card';
-    const cls=n>0.01?'bal-pos':n<-0.01?'bal-neg':'bal-zero';
-    const label=n>0.01?`gets back ${fmt(n)}`:n<-0.01?`owes ${fmt(Math.abs(n))}`:'settled up';
-    div.innerHTML=`
-      <div class="av" style="background:${pColor(p,t.people)}">${initials(p)}</div>
+  const t = currentTrip();
+  const net = computeNet();
+  const grid = document.getElementById('balanceGrid');
+  grid.innerHTML = '';
+  if (!t.people.length) {
+    grid.innerHTML = '<div style="color:var(--ink-3);font-size:13px">Add some people to see balances.</div>';
+    return;
+  }
+  t.people.forEach(p => {
+    const n = net[p] || 0;
+    const div = document.createElement('div'); div.className = 'balance-card';
+    const cls   = n >  0.01 ? 'bal-pos' : n < -0.01 ? 'bal-neg' : 'bal-zero';
+    const label = n >  0.01 ? `gets back ${fmt(n)}`
+                : n < -0.01 ? `owes ${fmt(Math.abs(n))}`
+                : 'settled up';
+    div.innerHTML = `
+      <div class="av" style="background:${pColor(p, t.people)}">${initials(p)}</div>
       <div><div class="balance-name">${esc(p)}</div><div class="balance-amount ${cls}">${label}</div></div>`;
     grid.appendChild(div);
   });
 }
 
 function renderSettlements() {
-  const t=currentTrip(); const net=computeNet();
-  const list=document.getElementById('settleList'); list.innerHTML='';
-  const cred=[],debt=[];
-  Object.entries(net).forEach(([p,n])=>{ if(n>0.005) cred.push({p,n}); else if(n<-0.005) debt.push({p,n:-n}); });
-  cred.sort((a,b)=>b.n-a.n); debt.sort((a,b)=>b.n-a.n);
-  const c=cred.map(x=>({...x})),d=debt.map(x=>({...x}));
-  const res=[]; let ci=0,di=0;
-  while(ci<c.length&&di<d.length){
-    const amt=Math.min(c[ci].n,d[di].n);
-    if(amt>0.005) res.push({from:d[di].p,to:c[ci].p,amt});
-    c[ci].n-=amt; d[di].n-=amt;
-    if(c[ci].n<0.005)ci++; if(d[di].n<0.005)di++;
-  }
-  if(!res.length){
-    list.innerHTML=`<div style="text-align:center;padding:40px 20px;color:var(--ink-3)"><div style="font-size:32px;margin-bottom:10px">🎉</div><div style="font-weight:600;font-size:15px;color:var(--ink);margin-bottom:4px">All squared up!</div><div style="font-size:13px">No payments needed.</div></div>`;
+  const t = currentTrip();
+  const net = computeNet();
+  const list = document.getElementById('settleList');
+  list.innerHTML = '';
+
+  const res = settleDebts(net);
+
+  if (!res.length) {
+    list.innerHTML = `<div style="text-align:center;padding:40px 20px;color:var(--ink-3)">
+      <div style="font-size:32px;margin-bottom:10px">🎉</div>
+      <div style="font-weight:600;font-size:15px;color:var(--ink);margin-bottom:4px">All squared up!</div>
+      <div style="font-size:13px">No payments needed.</div></div>`;
     return;
   }
-  res.forEach(s=>{
-    const sid='settle-'+s.from.replace(/\s+/g,'_')+'-'+s.to.replace(/\s+/g,'_');
-    const alreadySettled=(t.settledPayments||[]).some(p=>p.id===sid);
-    const div=document.createElement('div');
-    div.className='settle-item'+(alreadySettled?' is-settled':'');
 
-    const fromAv=document.createElement('div');
-    fromAv.className='av-sm'; fromAv.style.cssText=`background:${pColor(s.from,t.people)};border:none;width:28px;height:28px`;
-    fromAv.textContent=initials(s.from);
+  res.forEach(s => {
+    const sid = 'settle-' + s.from.replace(/\s+/g,'_') + '-' + s.to.replace(/\s+/g,'_');
+    const alreadySettled = (t.settledPayments||[]).some(p => p.id === sid);
+    const div = document.createElement('div');
+    div.className = 'settle-item' + (alreadySettled ? ' is-settled' : '');
 
-    const fromName=document.createElement('span');
-    fromName.className='settle-person'; fromName.textContent=s.from;
+    const fromAv = document.createElement('div');
+    fromAv.className = 'av-sm';
+    fromAv.style.cssText = `background:${pColor(s.from,t.people)};border:none;width:28px;height:28px`;
+    fromAv.textContent = initials(s.from);
 
-    const arrow=document.createElement('span');
-    arrow.className='settle-arrow'; arrow.textContent='→';
+    const fromName = document.createElement('span');
+    fromName.className = 'settle-person'; fromName.textContent = s.from;
 
-    const toAv=document.createElement('div');
-    toAv.className='av-sm'; toAv.style.cssText=`background:${pColor(s.to,t.people)};border:none;width:28px;height:28px`;
-    toAv.textContent=initials(s.to);
+    const arrow = document.createElement('span');
+    arrow.className = 'settle-arrow'; arrow.textContent = '→';
 
-    const toName=document.createElement('span');
-    toName.className='settle-person'; toName.textContent=s.to;
+    const toAv = document.createElement('div');
+    toAv.className = 'av-sm';
+    toAv.style.cssText = `background:${pColor(s.to,t.people)};border:none;width:28px;height:28px`;
+    toAv.textContent = initials(s.to);
 
-    const amtEl=document.createElement('div');
-    amtEl.className='settle-amount'; amtEl.textContent=fmt(s.amt);
+    const toName = document.createElement('span');
+    toName.className = 'settle-person'; toName.textContent = s.to;
 
-    const btn=document.createElement('button');
-    if(alreadySettled){
-      btn.className='settle-btn settled';
-      btn.textContent='✓ Paid';
-      btn.title='Click to mark as unpaid';
-      btn.addEventListener('click', ()=>unsettle(sid, s.from, s.to, s.amt));
+    const amtEl = document.createElement('div');
+    amtEl.className = 'settle-amount'; amtEl.textContent = fmt(s.amt);
+
+    const btn = document.createElement('button');
+    if (alreadySettled) {
+      btn.className = 'settle-btn settled';
+      btn.textContent = '✓ Paid';
+      btn.title = 'Click to mark as unpaid';
+      btn.addEventListener('click', () => unsettle(sid, s.from, s.to, s.amt));
     } else {
-      btn.className='settle-btn';
-      btn.textContent='Settle Up';
-      btn.addEventListener('click', ()=>confirmSettlement(sid, s.from, s.to, s.amt));
+      btn.className = 'settle-btn';
+      btn.textContent = 'Settle Up';
+      btn.addEventListener('click', () => confirmSettlement(sid, s.from, s.to, s.amt));
     }
 
-    div.appendChild(fromAv);
-    div.appendChild(fromName);
-    div.appendChild(arrow);
-    div.appendChild(toAv);
-    div.appendChild(toName);
-    div.appendChild(amtEl);
+    div.appendChild(fromAv); div.appendChild(fromName); div.appendChild(arrow);
+    div.appendChild(toAv);   div.appendChild(toName);   div.appendChild(amtEl);
     div.appendChild(btn);
     list.appendChild(div);
   });
