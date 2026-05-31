@@ -833,6 +833,34 @@
     margin-top: 4px; line-height: 1.6;
   }
 
+
+  /* ── WHO OWES WHOM BREAKDOWN ── */
+  .bal-owe-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .bal-owe-row {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; padding: 4px 0;
+    border-top: 1px solid var(--border);
+  }
+  .bal-owe-row:first-child { border-top: none; }
+  .bal-owe-dir { color: var(--ink-3); flex-shrink: 0; font-size: 10px; width: 14px; text-align: center; }
+  .bal-owe-name { flex: 1; font-weight: 500; color: var(--ink-2); }
+  .bal-owe-amt { font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .bal-owe-amt.pos { color: var(--green); }
+  .bal-owe-amt.neg { color: var(--red); }
+  .bal-owe-label { font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--ink-4); margin: 8px 0 3px; }
+
+  /* Settle Up grouped by payer */
+  .settle-group { margin-bottom: 20px; }
+  .settle-group-header {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  }
+  .settle-group-title { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .settle-group-total {
+    font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--ink-3); margin-left: auto;
+  }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1279,7 +1307,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'e8946be';
+const REV = 'a639712';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -2414,12 +2442,44 @@ function renderBalances() {
   const cardsGrid = document.createElement('div');
   cardsGrid.className = 'bal-summary-grid';
 
+  // Compute who specifically owes whom using the settlement engine
+  const settlements = settleDebts(net);
+  // Build lookup: for each person, list of {counterpart, amt, direction}
+  const oweMap = {}; // oweMap[p] = [{name, amt, dir: 'owes'|'owed'}]
+  t.people.forEach(p => oweMap[p] = []);
+  settlements.forEach(s => {
+    oweMap[s.from].push({ name: s.to,   amt: s.amt, dir: 'owes' });
+    oweMap[s.to  ].push({ name: s.from, amt: s.amt, dir: 'owed' });
+  });
+
   t.people.forEach(p => {
     const n     = dsRound(net[p] || 0);
     const paid  = totalPaid[p]  || 0;
     const share = totalShare[p] || 0;
     const netCls   = n > 0.01 ? 'bal-net-pos' : n < -0.01 ? 'bal-net-neg' : 'bal-net-zero';
     const netLabel = n > 0.01 ? `+${fmt(n)}` : n < -0.01 ? `-${fmt(Math.abs(n))}` : 'even';
+
+    // Who owes / who is owed rows
+    const oweRows = oweMap[p] || [];
+    const owesRows = oweRows.filter(r=>r.dir==='owes');
+    const owedRows = oweRows.filter(r=>r.dir==='owed');
+
+    const mkOweRow = (r) => `
+      <div class="bal-owe-row">
+        <div style="width:18px;height:18px;border-radius:50%;background:${pColor(r.name,t.people)};
+          display:flex;align-items:center;justify-content:center;
+          font-size:9px;font-weight:700;color:#fff;flex-shrink:0">${initials(r.name)}</div>
+        <span class="bal-owe-name">${esc(r.name)}</span>
+        <span class="bal-owe-amt ${r.dir==='owes'?'neg':'pos'}">
+          ${r.dir==='owes'?'−':'+'}${fmt(r.amt)}
+        </span>
+      </div>`;
+
+    const oweSections = [
+      owesRows.length ? `<div class="bal-owe-label">Owes</div><div class="bal-owe-list">${owesRows.map(mkOweRow).join('')}</div>` : '',
+      owedRows.length ? `<div class="bal-owe-label">Owed by</div><div class="bal-owe-list">${owedRows.map(mkOweRow).join('')}</div>` : '',
+      !oweRows.length && Math.abs(n)<0.01 ? `<div style="font-size:11px;color:var(--ink-3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">✓ Settled up</div>` : '',
+    ].join('');
 
     const card = document.createElement('div');
     card.className = 'bal-person-card';
@@ -2449,6 +2509,7 @@ function renderBalances() {
           : n < -0.01 ? `owes ${fmt(Math.abs(n))}`
           : 'settled up'}</span>
         </div>
+        ${oweSections}
       </div>`;
     cardsGrid.appendChild(card);
   });
@@ -2540,86 +2601,100 @@ function renderSettlements() {
     </div>`;
   list.appendChild(header);
 
-  // ── Settlement rows ───────────────────────────────────────
-  res.forEach(s => {
-    const sid = 'settle-' + s.from.replace(/\s+/g,'_') + '-' + s.to.replace(/\s+/g,'_');
-    const alreadySettled = (t.settledPayments||[]).some(p => p.id === sid);
+  // ── Group settlements by debtor (from) ────────────────────
+  // Collect unique debtors in order
+  const debtorOrder = [...new Set(res.map(s=>s.from))];
 
-    // Work out which expenses drive this payment
-    const relatedExps = t.expenses.filter(exp =>
-      exp.paidBy === s.to && exp.splitBetween.includes(s.from)
-    );
+  debtorOrder.forEach(debtor => {
+    const debtorPayments = res.filter(s=>s.from===debtor);
+    const totalOwed = dsRound(debtorPayments.reduce((sum,s)=>sum+s.amt,0));
+    const allSettled = debtorPayments.every(s=>{
+      const sid='settle-'+s.from.replace(/\s+/g,'_')+'-'+s.to.replace(/\s+/g,'_');
+      return (t.settledPayments||[]).some(p=>p.id===sid);
+    });
 
-    const card = document.createElement('div');
-    card.className = 'settle-item' + (alreadySettled ? ' is-settled' : '');
+    // Group header — debtor summary
+    const group = document.createElement('div');
+    group.className = 'settle-group';
 
-    // Main row
-    const main = document.createElement('div');
-    main.className = 'settle-item-main';
+    const groupHeader = document.createElement('div');
+    groupHeader.className = 'settle-group-header';
+    groupHeader.innerHTML = `
+      <div class="av-sm" style="background:${pColor(debtor,t.people)};border:none;width:30px;height:30px;font-size:11px">${initials(debtor)}</div>
+      <span class="settle-group-title">${esc(debtor)}</span>
+      <span style="font-size:11px;color:var(--ink-3)">owes ${debtorPayments.length > 1 ? debtorPayments.length+' people' : ''}</span>
+      <span class="settle-group-total ${allSettled?'':''}">
+        ${allSettled ? '<span style="color:var(--green)">✓ All paid</span>' : fmt(totalOwed)+' total'}
+      </span>`;
+    group.appendChild(groupHeader);
 
-    // From
-    const fromAv = document.createElement('div');
-    fromAv.className = 'av-sm';
-    fromAv.style.cssText = `background:${pColor(s.from,t.people)};border:none;width:30px;height:30px;font-size:11px`;
-    fromAv.textContent = initials(s.from);
-    const fromName = document.createElement('span');
-    fromName.className = 'settle-person'; fromName.textContent = s.from;
+    // Individual payment cards within the group
+    debtorPayments.forEach(s => {
+      const sid = 'settle-' + s.from.replace(/\s+/g,'_') + '-' + s.to.replace(/\s+/g,'_');
+      const alreadySettled = (t.settledPayments||[]).some(p=>p.id===sid);
+      const relatedExps = t.expenses.filter(exp=>exp.paidBy===s.to&&exp.splitBetween.includes(s.from));
 
-    // Arrow + amount block
-    const mid = document.createElement('div');
-    mid.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:80px';
-    const arrow = document.createElement('div');
-    arrow.className = 'settle-arrow'; arrow.textContent = '→';
-    const amtEl = document.createElement('div');
-    amtEl.className = 'settle-amount'; amtEl.textContent = fmt(s.amt);
-    mid.appendChild(arrow); mid.appendChild(amtEl);
+      const card = document.createElement('div');
+      card.className = 'settle-item' + (alreadySettled ? ' is-settled' : '');
 
-    // To
-    const toAv = document.createElement('div');
-    toAv.className = 'av-sm';
-    toAv.style.cssText = `background:${pColor(s.to,t.people)};border:none;width:30px;height:30px;font-size:11px`;
-    toAv.textContent = initials(s.to);
-    const toName = document.createElement('span');
-    toName.className = 'settle-person'; toName.textContent = s.to;
+      const main = document.createElement('div');
+      main.className = 'settle-item-main';
+      main.style.paddingLeft = '38px'; // indent under group header
 
-    // Button
-    const btn = document.createElement('button');
-    if (alreadySettled) {
-      btn.className = 'settle-btn settled';
-      btn.textContent = '✓ Paid';
-      btn.title = 'Click to mark as unpaid';
-      btn.addEventListener('click', () => unsettle(sid, s.from, s.to, s.amt));
-    } else {
-      btn.className = 'settle-btn';
-      btn.textContent = 'Settle Up';
-      btn.addEventListener('click', () => confirmSettlement(sid, s.from, s.to, s.amt));
-    }
+      const arrow = document.createElement('span');
+      arrow.className = 'settle-arrow'; arrow.textContent = '→';
 
-    main.appendChild(fromAv); main.appendChild(fromName);
-    main.appendChild(mid);
-    main.appendChild(toAv); main.appendChild(toName);
-    main.appendChild(btn);
-    card.appendChild(main);
+      const toAv = document.createElement('div');
+      toAv.className = 'av-sm';
+      toAv.style.cssText = `background:${pColor(s.to,t.people)};border:none;width:28px;height:28px;font-size:10px`;
+      toAv.textContent = initials(s.to);
 
-    // Detail strip — related expenses
-    if (relatedExps.length) {
-      const detail = document.createElement('div');
-      detail.className = 'settle-item-detail';
-      detail.style.display = 'block';
-      const share = (exp) => dsRound(exp.amount / exp.splitBetween.length);
-      const lines = relatedExps.map(exp =>
-        `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;margin-bottom:3px">
-          <span style="font-size:13px">${CATS[exp.category]||'📦'}</span>
-          <span style="font-weight:500;color:var(--ink-2)">${esc(exp.desc)}</span>
-          <span style="color:var(--ink-3)">${fmt(share(exp))}</span>
-          ${exp.paidSettlements&&exp.paidSettlements[s.from]?'<span style="color:var(--green);font-size:10px">✓</span>':''}
-        </span>`
-      ).join('');
-      detail.innerHTML = `<div style="padding:8px 0 2px;display:flex;flex-wrap:wrap">${lines}</div>`;
-      card.appendChild(detail);
-    }
+      const toName = document.createElement('span');
+      toName.className = 'settle-person'; toName.textContent = s.to;
 
-    list.appendChild(card);
+      const amtEl = document.createElement('div');
+      amtEl.className = 'settle-amount'; amtEl.textContent = fmt(s.amt);
+
+      const btn = document.createElement('button');
+      if (alreadySettled) {
+        btn.className = 'settle-btn settled';
+        btn.textContent = '✓ Paid';
+        btn.title = 'Click to mark as unpaid';
+        btn.addEventListener('click', () => unsettle(sid, s.from, s.to, s.amt));
+      } else {
+        btn.className = 'settle-btn';
+        btn.textContent = 'Settle Up';
+        btn.addEventListener('click', () => confirmSettlement(sid, s.from, s.to, s.amt));
+      }
+
+      main.appendChild(arrow); main.appendChild(toAv);
+      main.appendChild(toName); main.appendChild(amtEl);
+      main.appendChild(btn);
+      card.appendChild(main);
+
+      // Related expenses detail strip
+      if (relatedExps.length) {
+        const detail = document.createElement('div');
+        detail.className = 'settle-item-detail';
+        detail.style.cssText = 'display:block;padding-left:38px';
+        const lines = relatedExps.map(exp => {
+          const expShare = dsRound((computeExpenseShares(exp))[s.from] || 0);
+          const isSettled = exp.paidSettlements && exp.paidSettlements[s.from];
+          return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;margin-bottom:3px">
+            <span style="font-size:13px">${CATS[exp.category]||'📦'}</span>
+            <span style="font-weight:500;color:var(--ink-2)">${esc(exp.desc)}</span>
+            <span style="color:var(--ink-3)">${fmt(expShare)}</span>
+            ${isSettled?'<span style="color:var(--green);font-size:10px">✓</span>':''}
+          </span>`;
+        }).join('');
+        detail.innerHTML = `<div style="padding:6px 0 2px;display:flex;flex-wrap:wrap">${lines}</div>`;
+        card.appendChild(detail);
+      }
+
+      group.appendChild(card);
+    });
+
+    list.appendChild(group);
   });
 }
 
