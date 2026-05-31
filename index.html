@@ -1053,7 +1053,7 @@
       <div class="field">
         <label>Receipt / Photo <span style="color:var(--ink-3);font-weight:400">(optional)</span></label>
         <div class="photo-zone" onclick="if(event.target===this||event.target.classList.contains('pz-icon')||event.target.classList.contains('pz-text')){document.getElementById('photoInput').click()}">
-          <input type="file" id="photoInput" accept="image/*" capture="environment" onchange="handlePhoto(event)" onclick="event.stopPropagation()">
+          <input type="file" id="photoInput" accept="image/*" onchange="handlePhoto(event)" onclick="event.stopPropagation()">
           <div class="pz-icon" id="pzIcon">📷</div>
           <div class="pz-text" id="pzText">Tap to take a photo or upload</div>
         </div>
@@ -1135,7 +1135,7 @@
       <div class="field">
         <label>Receipt / Photo <span style="color:var(--ink-3);font-weight:400">(optional)</span></label>
         <div class="photo-zone" onclick="if(event.target===this||event.target.classList.contains('pz-icon')||event.target.classList.contains('pz-text')){document.getElementById('editPhotoInput').click()}">
-          <input type="file" id="editPhotoInput" accept="image/*" capture="environment" onchange="handleEditPhoto(event)" onclick="event.stopPropagation()">
+          <input type="file" id="editPhotoInput" accept="image/*" onchange="handleEditPhoto(event)" onclick="event.stopPropagation()">
           <div class="pz-icon" id="editPzIcon">📷</div>
           <div class="pz-text" id="editPzText">Tap to replace photo</div>
         </div>
@@ -1221,7 +1221,7 @@
           <button class="cover-remove-btn" onclick="removeCoverPhoto()">✕</button>
         </div>
         <div class="photo-zone" id="coverUploadZone" onclick="if(event.target===this||event.target.classList.contains('pz-icon')||event.target.classList.contains('pz-text')){document.getElementById('coverPhotoInput').click()}">
-          <input type="file" id="coverPhotoInput" accept="image/*" capture="environment" onchange="handleCoverPhoto(event)" onclick="event.stopPropagation()">
+          <input type="file" id="coverPhotoInput" accept="image/*" onchange="handleCoverPhoto(event)" onclick="event.stopPropagation()">
           <div class="pz-icon">🖼️</div>
           <div class="pz-text">Tap to upload a cover photo</div>
         </div>
@@ -1279,7 +1279,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '71828e8';
+const REV = 'e8946be';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
