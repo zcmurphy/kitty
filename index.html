@@ -772,6 +772,67 @@
   .settle-item.is-settled .settle-item-main { opacity: 0.55; }
   .settle-item.is-settled .settle-amount { text-decoration: line-through; color: var(--ink-3); }
 
+
+  /* ── SPLIT TYPE UI ── */
+  .split-type-tabs {
+    display: flex; gap: 2px; background: var(--surface-2);
+    border-radius: 8px; padding: 3px; margin-bottom: 12px;
+  }
+  .split-type-tab {
+    flex: 1; padding: 6px 8px; border-radius: 6px; border: none;
+    background: transparent; font-family: 'Inter', sans-serif;
+    font-size: 12px; font-weight: 500; color: var(--ink-3);
+    cursor: pointer; transition: all 0.15s; text-align: center;
+  }
+  .split-type-tab.active {
+    background: var(--surface); color: var(--ink);
+    font-weight: 600; box-shadow: var(--shadow-sm);
+  }
+  .split-type-tab:hover:not(.active) { color: var(--ink-2); }
+
+  /* shares input grid */
+  .shares-grid {
+    display: flex; flex-direction: column; gap: 6px;
+    margin-top: 4px;
+  }
+  .share-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .share-row-name {
+    display: flex; align-items: center; gap: 6px;
+    width: 110px; flex-shrink: 0; font-size: 13px; font-weight: 500;
+  }
+  .share-row input {
+    flex: 1; padding: 6px 10px; border: 1.5px solid var(--border);
+    border-radius: 7px; font-family: 'Inter', sans-serif;
+    font-size: 13px; background: var(--surface); color: var(--ink);
+    outline: none; transition: border-color 0.15s; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .share-row input:focus { border-color: var(--blue); }
+  .share-row-suffix {
+    font-size: 12px; color: var(--ink-3); width: 22px;
+    flex-shrink: 0; text-align: left;
+  }
+  .share-row-calc {
+    font-size: 11px; color: var(--ink-3); width: 55px;
+    flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums;
+  }
+  .split-total-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 0 0; border-top: 1px solid var(--border); margin-top: 4px;
+    font-size: 12px;
+  }
+  .split-total-row .stl { color: var(--ink-3); font-weight: 500; }
+  .split-total-row .stv { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .split-total-row .stv.ok  { color: var(--green); }
+  .split-total-row .stv.bad { color: var(--red); }
+  .split-equal-preview {
+    background: var(--surface-2); border-radius: 8px;
+    padding: 10px 12px; font-size: 12px; color: var(--ink-2);
+    margin-top: 4px; line-height: 1.6;
+  }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -964,12 +1025,28 @@
       </div>
       <div class="field"><label>Paid by</label><select id="ePaidBy"></select></div>
       <div class="field">
-        <label>Split between</label>
+        <label>Split</label>
+        <div class="split-type-tabs">
+          <button class="split-type-tab active" data-split="even"   onclick="setSplitType('even',this,'e')">Equal</button>
+          <button class="split-type-tab"        data-split="percentage" onclick="setSplitType('percentage',this,'e')">% Percent</button>
+          <button class="split-type-tab"        data-split="amount" onclick="setSplitType('amount',this,'e')">$ Custom</button>
+        </div>
+        <!-- People selector (shown for all types) -->
         <div class="chip-row" id="eSplit"></div>
         <div style="display:flex;gap:6px;margin-top:8px">
-          <button class="btn btn-ghost btn-sm" onclick="splitAll()">Select all</button>
-          <button class="btn btn-ghost btn-sm" onclick="splitNone()">Clear</button>
+          <button class="btn btn-ghost btn-sm" onclick="splitAll('e')">Select all</button>
+          <button class="btn btn-ghost btn-sm" onclick="splitNone('e')">Clear</button>
         </div>
+        <!-- Share inputs (shown for percentage/amount) -->
+        <div id="eSharesWrap" style="display:none;margin-top:12px">
+          <div class="shares-grid" id="eSharesGrid"></div>
+          <div class="split-total-row">
+            <span class="stl" id="eSharesTotalLabel">Total</span>
+            <span class="stv" id="eSharesTotal">$0.00</span>
+          </div>
+        </div>
+        <!-- Equal preview -->
+        <div id="eEqualPreview" class="split-equal-preview" style="display:none"></div>
       </div>
       <div class="field"><label>Date</label><input type="date" id="eDate"></div>
       <div class="field"><label>Note <span style="color:var(--ink-3);font-weight:400">(optional)</span></label><textarea id="eNote" placeholder="Any details…" rows="2"></textarea></div>
@@ -1033,12 +1110,25 @@
       </div>
       <div class="field"><label>Paid by</label><select id="editPaidBy"></select></div>
       <div class="field">
-        <label>Split between</label>
+        <label>Split</label>
+        <div class="split-type-tabs">
+          <button class="split-type-tab active" data-split="even"       onclick="setSplitType('even',this,'ed')">Equal</button>
+          <button class="split-type-tab"        data-split="percentage" onclick="setSplitType('percentage',this,'ed')">% Percent</button>
+          <button class="split-type-tab"        data-split="amount"     onclick="setSplitType('amount',this,'ed')">$ Custom</button>
+        </div>
         <div class="chip-row" id="editSplit"></div>
         <div style="display:flex;gap:6px;margin-top:8px">
-          <button class="btn btn-ghost btn-sm" onclick="editSplitAll()">Select all</button>
-          <button class="btn btn-ghost btn-sm" onclick="editSplitNone()">Clear</button>
+          <button class="btn btn-ghost btn-sm" onclick="splitAll('ed')">Select all</button>
+          <button class="btn btn-ghost btn-sm" onclick="splitNone('ed')">Clear</button>
         </div>
+        <div id="edSharesWrap" style="display:none;margin-top:12px">
+          <div class="shares-grid" id="edSharesGrid"></div>
+          <div class="split-total-row">
+            <span class="stl" id="edSharesTotalLabel">Total</span>
+            <span class="stv" id="edSharesTotal">$0.00</span>
+          </div>
+        </div>
+        <div id="edEqualPreview" class="split-equal-preview" style="display:none"></div>
       </div>
       <div class="field"><label>Date</label><input type="date" id="editDate"></div>
       <div class="field"><label>Note <span style="color:var(--ink-3);font-weight:400">(optional)</span></label><textarea id="editNote" rows="2"></textarea></div>
@@ -1189,7 +1279,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '09845e5';
+const REV = '71828e8';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1634,7 +1724,12 @@ function renderExpenses() {
   [...t.expenses].reverse().forEach(exp=>{
     const div=document.createElement('div'); div.className='expense-item'; div.style.cursor='pointer';
     const tags=exp.splitBetween.map(p=>`<span class="exp-tag" style="background:${pColor(p,t.people)}18;color:${pColor(p,t.people)}">${esc(p)}</span>`).join('');
-    const each=exp.splitBetween.length?fmt(exp.amount/exp.splitBetween.length):'-';
+    const _expShares = computeExpenseShares(exp);
+    const _nonPayerShares = exp.splitBetween.filter(p=>p!==exp.paidBy).map(p=>_expShares[p]||0);
+    const each = _nonPayerShares.length ? fmt(_nonPayerShares[0]) : '-';
+    const splitTypeBadge = exp.splitType && exp.splitType!=='even'
+      ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:100px;background:var(--blue-bg);color:var(--blue);margin-left:4px">${exp.splitType==='percentage'?'%':'$'} split</span>`
+      : '';
     div.innerHTML=`
       <div class="exp-icon">${CATS[exp.category]||'📦'}</div>
       <div class="exp-body">
@@ -1642,7 +1737,7 @@ function renderExpenses() {
         <div class="exp-meta">${exp.date?exp.date+' · ':''}${exp.category}</div>
         <div class="exp-tags">${tags}</div>
         ${exp.note?`<div class="exp-note">${esc(exp.note)}</div>`:''}
-        <div class="exp-split exp-split-${exp.id}">÷ ${exp.splitBetween.length} people = ${each} each</div>
+        <div class="exp-split exp-split-${exp.id}">÷ ${exp.splitBetween.length} people = ${each} each${splitTypeBadge}</div>
       </div>
       ${exp.photo?`<img class="exp-receipt" src="${photoUrl(exp.photo)}" onclick="openLightbox(event,this.src)">` :''}
       <div class="exp-right">
@@ -1658,7 +1753,7 @@ function renderExpenses() {
       const debtors = exp.splitBetween.filter(p=>p!==exp.paidBy);
       const settledCount = debtors.filter(p=>exp.paidSettlements&&exp.paidSettlements[p]).length;
       const badgeHtml = settledCount>0 ? ' <span class="exp-settled-badge">'+settledCount+'/'+debtors.length+' paid back</span>' : '';
-      splitEl.innerHTML = '÷ '+exp.splitBetween.length+' people = '+each+' each'+badgeHtml;
+      splitEl.innerHTML = '÷ '+exp.splitBetween.length+' people = '+each+' each'+badgeHtml+(exp.splitType&&exp.splitType!=='even'?'<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:100px;background:var(--blue-bg);color:var(--blue);margin-left:4px">'+(exp.splitType==='percentage'?'%':'$')+' split</span>':'');
     }
   });
 }
@@ -1667,8 +1762,10 @@ function showExpenseDetail(id) {
   const t=currentTrip();
   const exp=t.expenses.find(e=>e.id===id); if(!exp) return;
   if(!exp.paidSettlements) exp.paidSettlements={};
-  const share=exp.splitBetween.length ? exp.amount/exp.splitBetween.length : 0;
-  const each=share>0?fmt(share):'-';
+  const _detailShares = computeExpenseShares(exp);
+  const _detailDebtors = exp.splitBetween.filter(p=>p!==exp.paidBy);
+  const share = _detailDebtors.length ? dsRound(_detailShares[_detailDebtors[0]]||0) : 0;
+  const each = share>0?fmt(share):'-';
   const fmtDateNice=s=>{ if(!s)return'—'; const d=new Date(s+'T00:00:00'); return d.toLocaleDateString('en-US',{weekday:'short',year:'numeric',month:'long',day:'numeric'}); };
 
   // Build body via DOM to avoid inline handler issues
@@ -2091,16 +2188,23 @@ function showEditExpenseModal(id) {
   ).join('');
   document.getElementById('editPaidBy').innerHTML=t.people.map(p=>`<option${p===exp.paidBy?' selected':''}>${esc(p)}</option>`).join('');
   document.getElementById('editSplit').innerHTML=t.people.map(p=>`
-    <div class="p-chip${exp.splitBetween.includes(p)?' selected':''}" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected')">
+    <div class="p-chip${exp.splitBetween.includes(p)?' selected':''}" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected');renderSharesGrid('ed')">
       <span class="p-chip-dot" style="background:${pColor(p,t.people)}"></span>${esc(p)}
     </div>`).join('');
+  // Restore split type
+  const _st = exp.splitType||'even';
+  _splitState['ed'] = _st;
+  document.querySelectorAll('#modalEditExpense .split-type-tab').forEach(tab=>{
+    tab.classList.toggle('active', tab.dataset.split===_st);
+  });
   openModal('modalEditExpense');
+  bindAmountListener('ed');
+  setTimeout(()=>renderSharesGrid('ed'),80);
   setTimeout(()=>document.getElementById('editDesc').focus(),100);
 }
 
 function selEditCat(el){ document.querySelectorAll('#editCatGrid .cat-chip').forEach(c=>c.classList.remove('selected')); el.classList.add('selected'); }
-function editSplitAll(){ document.querySelectorAll('#editSplit .p-chip').forEach(c=>c.classList.add('selected')); }
-function editSplitNone(){ document.querySelectorAll('#editSplit .p-chip').forEach(c=>c.classList.remove('selected')); }
+// editSplitAll/None now handled by splitAll/splitNone with namespace 'ed'
 
 function handleEditPhoto(e){
   const file=e.target.files[0]; if(!file) return;
@@ -2125,10 +2229,12 @@ async function saveEditExpense(){
   const note=document.getElementById('editNote').value.trim();
   const category=document.querySelector('#editCatGrid .cat-chip.selected')?.dataset.cat||exp.category;
   const splitBetween=[...document.querySelectorAll('#editSplit .p-chip.selected')].map(c=>c.dataset.person);
+  const splitType=_splitState['ed']||'even';
   const who=document.getElementById('editWho').value;
   if(!desc){alert('Please enter a description.');return;}
   if(!amount||amount<=0){alert('Please enter a valid amount.');return;}
-  if(!splitBetween.length){alert('Select at least one person to split with.');return;}
+  if(!validateShares('ed',amount)) return;
+  const shares = splitType!=='even' ? getSharesFromGrid('ed') : null;
   // build a change summary
   const changes=[];
   if(exp.desc!==desc) changes.push(`renamed to "${desc}"`);
@@ -2140,7 +2246,8 @@ async function saveEditExpense(){
   if(prevSplit!==newSplit) changes.push(`split updated`);
   // apply
   exp.desc=desc; exp.amount=amount; exp.paidBy=paidBy; exp.date=date;
-  exp.note=note; exp.category=category; exp.splitBetween=splitBetween; exp.photo=editPhoto;
+  exp.note=note; exp.category=category; exp.splitBetween=splitBetween;
+  exp.splitType=splitType; exp.shares=shares; exp.photo=editPhoto;
   logHistory(t,'edited',who,desc,amount,changes.length?changes.join(', '):null);
   closeModal('modalEditExpense'); renderAll();
   await save(async()=>{
@@ -2193,16 +2300,36 @@ function computeNetRaw() {
 
 function dsRound(n) { return Math.round(n * 100) / 100; }
 
-// Build Transaction list from trip expenses (even-split model)
-// Honours per-expense paidSettlements as already-cleared debts
+// Compute each person's share for an expense based on splitType
+// Mirrors debtSettlement.ts computeShares()
+function computeExpenseShares(exp) {
+  const { amount, splitBetween, splitType, shares } = exp;
+  const r = dsRound;
+  if (!splitType || splitType === 'even') {
+    const s = r(amount / splitBetween.length);
+    return Object.fromEntries(splitBetween.map(p=>[p,s]));
+  }
+  if (splitType === 'percentage') {
+    if (!shares) return Object.fromEntries(splitBetween.map(p=>[p, r(amount/splitBetween.length)]));
+    return Object.fromEntries(splitBetween.map(p=>[p, r(amount * (shares[p]||0) / 100)]));
+  }
+  if (splitType === 'amount') {
+    if (!shares) return Object.fromEntries(splitBetween.map(p=>[p, r(amount/splitBetween.length)]));
+    return Object.fromEntries(splitBetween.map(p=>[p, r(shares[p]||0)]));
+  }
+  return Object.fromEntries(splitBetween.map(p=>[p, r(amount/splitBetween.length)]));
+}
+
+// Build Transaction list from trip expenses
+// Honours splitType/shares and paidSettlements
 function buildTransactions() {
   const t = currentTrip();
   const txns = [];
   t.expenses.forEach(exp => {
-    const share = exp.splitBetween.length ? dsRound(exp.amount / exp.splitBetween.length) : 0;
+    const expShares = computeExpenseShares(exp);
     exp.splitBetween.forEach(person => {
-      if (person === exp.paidBy) return; // payer doesn't owe themselves
-      // Check if this person's share is already individually settled
+      if (person === exp.paidBy) return;
+      const share = expShares[person] || 0;
       const ps = exp.paidSettlements && exp.paidSettlements[person];
       const settledAmt = ps ? (typeof ps === 'object' ? dsRound(ps.amt) : share) : 0;
       const outstanding = dsRound(share - settledAmt);
@@ -2211,9 +2338,8 @@ function buildTransactions() {
       }
     });
   });
-  // Also account for trip-level settled payments (they've already transferred cash)
+  // Trip-level settled payments cancel debts
   (t.settledPayments || []).forEach(sp => {
-    // A settled payment means `from` already paid `to` — cancel that debt
     txns.push({ debtor: sp.to, creditor: sp.from, amount: sp.amt });
   });
   return txns;
@@ -2632,16 +2758,22 @@ function showExpenseModal(){
     `<option${p===currentUser?' selected':''}>${esc(p)}</option>`
   ).join('');
   document.getElementById('eSplit').innerHTML=t.people.map(p=>`
-    <div class="p-chip selected" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected')">
+    <div class="p-chip selected" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected');renderSharesGrid('e')">
       <span class="p-chip-dot" style="background:${pColor(p,t.people)}"></span>${esc(p)}
     </div>`).join('');
+  // Reset split type to even
+  _splitState['e']='even';
+  document.querySelectorAll('#modalExpense .split-type-tab').forEach((t,i)=>t.classList.toggle('active',i===0));
+  document.getElementById('eSharesWrap').style.display='none';
+  document.getElementById('eEqualPreview').style.display='none';
   openModal('modalExpense');
-  setTimeout(()=>document.getElementById('eDesc').focus(),100);
+  bindAmountListener('e');
+  setTimeout(()=>{ document.getElementById('eDesc').focus(); renderSharesGrid('e'); },100);
 }
 
 function selCat(el){ document.querySelectorAll('#catGrid .cat-chip').forEach(c=>c.classList.remove('selected')); el.classList.add('selected'); }
-function splitAll(){ document.querySelectorAll('#eSplit .p-chip').forEach(c=>c.classList.add('selected')); }
-function splitNone(){ document.querySelectorAll('#eSplit .p-chip').forEach(c=>c.classList.remove('selected')); }
+function splitAll(ns){ const p=ns==='ed'?'editSplit':'eSplit'; document.querySelectorAll('#'+p+' .p-chip').forEach(c=>c.classList.add('selected')); renderSharesGrid(ns); }
+function splitNone(ns){ const p=ns==='ed'?'editSplit':'eSplit'; document.querySelectorAll('#'+p+' .p-chip').forEach(c=>c.classList.remove('selected')); renderSharesGrid(ns); }
 
 function handlePhoto(e){
   const file=e.target.files[0]; if(!file) return;
@@ -2656,6 +2788,147 @@ function handlePhoto(e){
   reader.readAsDataURL(file);
 }
 
+
+// ── Split Type Engine ──────────────────────────────────────
+// ns = 'e' (add) or 'ed' (edit)
+const _splitState = { e: 'even', ed: 'even' };
+
+function setSplitType(type, el, ns) {
+  _splitState[ns] = type;
+  const tabsParent = el.parentElement;
+  tabsParent.querySelectorAll('.split-type-tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  renderSharesGrid(ns);
+}
+
+function getSplitPeople(ns) {
+  const id = ns==='ed' ? 'editSplit' : 'eSplit';
+  return [...document.querySelectorAll('#'+id+' .p-chip.selected')].map(c=>c.dataset.person);
+}
+
+function getSplitAmount(ns) {
+  const id = ns==='ed' ? 'editAmount' : 'eAmount';
+  return parseFloat(document.getElementById(id).value)||0;
+}
+
+function renderSharesGrid(ns) {
+  const type    = _splitState[ns];
+  const people  = getSplitPeople(ns);
+  const total   = getSplitAmount(ns);
+  const gridId  = ns==='ed' ? 'edSharesGrid'  : 'eSharesGrid';
+  const wrapId  = ns==='ed' ? 'edSharesWrap'  : 'eSharesWrap';
+  const prevId  = ns==='ed' ? 'edEqualPreview': 'eEqualPreview';
+  const totId   = ns==='ed' ? 'edSharesTotal' : 'eSharesTotal';
+  const labId   = ns==='ed' ? 'edSharesTotalLabel':'eSharesTotalLabel';
+
+  document.getElementById(wrapId).style.display  = (type!=='even' && people.length>0) ? '' : 'none';
+  document.getElementById(prevId).style.display  = (type==='even' && people.length>0) ? '' : 'none';
+
+  if (type==='even' && people.length>0) {
+    const share = total>0 ? dsRound(total/people.length) : 0;
+    document.getElementById(prevId).innerHTML =
+      people.map(p=>`<span style="display:inline-flex;align-items:center;gap:5px;margin-right:10px">
+        <span style="width:18px;height:18px;border-radius:50%;background:${pColor(p,currentTrip().people)};display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff">${initials(p)}</span>
+        <span style="font-weight:500">${esc(p)}</span>
+        <span style="color:var(--ink-3)">${total>0?fmt(share):'—'}</span>
+      </span>`).join('');
+    return;
+  }
+  if (type==='even') return;
+
+  const grid = document.getElementById(gridId);
+  document.getElementById(labId).textContent = type==='percentage' ? '% Total (must = 100)' : '$ Total';
+
+  // Preserve existing input values
+  const existing = {};
+  grid.querySelectorAll('.share-row').forEach(row=>{
+    const inp = row.querySelector('input');
+    if(inp) existing[row.dataset.person] = inp.value;
+  });
+
+  grid.innerHTML = '';
+  people.forEach(p => {
+    const defaultVal = type==='percentage'
+      ? dsRound(100/people.length)
+      : total>0 ? dsRound(total/people.length) : 0;
+    const val = existing[p] !== undefined ? existing[p] : defaultVal;
+    const row = document.createElement('div');
+    row.className='share-row'; row.dataset.person=p;
+    row.innerHTML = `
+      <div class="share-row-name">
+        <div style="width:20px;height:20px;border-radius:50%;background:${pColor(p,currentTrip().people)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff">${initials(p)}</div>
+        <span>${esc(p)}</span>
+      </div>
+      <input type="number" value="${val}" min="0" step="${type==='percentage'?'0.01':'0.01'}" oninput="updateShareTotal('${ns}')">
+      <span class="share-row-suffix">${type==='percentage'?'%':''}</span>
+      <span class="share-row-calc" id="shareCalc_${ns}_${p.replace(/\s+/g,'_')}"></span>`;
+    grid.appendChild(row);
+  });
+  updateShareTotal(ns);
+}
+
+function updateShareTotal(ns) {
+  const type   = _splitState[ns];
+  const total  = getSplitAmount(ns);
+  const gridId = ns==='ed' ? 'edSharesGrid' : 'eSharesGrid';
+  const totId  = ns==='ed' ? 'edSharesTotal': 'eSharesTotal';
+  const grid   = document.getElementById(gridId);
+  const totEl  = document.getElementById(totId);
+  let sum = 0;
+  grid.querySelectorAll('.share-row').forEach(row => {
+    const inp = row.querySelector('input');
+    const val = parseFloat(inp?.value)||0;
+    sum = dsRound(sum + val);
+    const calcEl = document.getElementById('shareCalc_'+ns+'_'+row.dataset.person?.replace(/\s+/g,'_'));
+    if(calcEl && type==='percentage' && total>0)
+      calcEl.textContent = fmt(dsRound(total * val / 100));
+    else if(calcEl) calcEl.textContent='';
+  });
+  if(!totEl) return;
+  if(type==='percentage') {
+    const ok = Math.abs(sum-100)<0.01;
+    totEl.textContent = sum.toFixed(2)+'%';
+    totEl.className = 'stv '+(ok?'ok':'bad');
+  } else {
+    const ok = Math.abs(sum-total)<0.02;
+    totEl.textContent = fmt(sum);
+    totEl.className = 'stv '+(ok?'ok':'bad');
+  }
+}
+
+function getSharesFromGrid(ns) {
+  const gridId = ns==='ed' ? 'edSharesGrid' : 'eSharesGrid';
+  const shares = {};
+  document.getElementById(gridId).querySelectorAll('.share-row').forEach(row=>{
+    const inp = row.querySelector('input');
+    shares[row.dataset.person] = parseFloat(inp?.value)||0;
+  });
+  return shares;
+}
+
+function validateShares(ns, total) {
+  const type   = _splitState[ns];
+  const people = getSplitPeople(ns);
+  if (!people.length) { alert('Select at least one person to split with.'); return false; }
+  if (type==='even') return true;
+  const shares = getSharesFromGrid(ns);
+  const sum    = dsRound(Object.values(shares).reduce((a,b)=>a+b,0));
+  if (type==='percentage' && Math.abs(sum-100)>0.01) {
+    alert(`Percentages must add up to 100% (currently ${sum.toFixed(2)}%).`); return false;
+  }
+  if (type==='amount' && Math.abs(sum-total)>0.02) {
+    alert(`Custom amounts must add up to ${fmt(total)} (currently ${fmt(sum)}).`); return false;
+  }
+  return true;
+}
+
+// Attach change listeners to amount fields to keep preview live
+function bindAmountListener(ns) {
+  const id = ns==='ed' ? 'editAmount' : 'eAmount';
+  const el = document.getElementById(id);
+  if(el) el.addEventListener('input', ()=>renderSharesGrid(ns));
+}
+
 async function saveExpense(){
   const t=currentTrip();
   const desc=document.getElementById('eDesc').value.trim();
@@ -2665,10 +2938,12 @@ async function saveExpense(){
   const note=document.getElementById('eNote').value.trim();
   const category=document.querySelector('#catGrid .cat-chip.selected')?.dataset.cat||'other';
   const splitBetween=[...document.querySelectorAll('#eSplit .p-chip.selected')].map(c=>c.dataset.person);
+  const splitType=_splitState['e']||'even';
   if(!desc){alert('Please enter a description.');return;}
   if(!amount||amount<=0){alert('Please enter a valid amount.');return;}
-  if(!splitBetween.length){alert('Select at least one person to split with.');return;}
-  const exp={id:uid(),desc,amount,paidBy,date,note,category,splitBetween,photo:currentPhoto,paidSettlements:{}};
+  if(!validateShares('e',amount)) return;
+  const shares = splitType!=='even' ? getSharesFromGrid('e') : null;
+  const exp={id:uid(),desc,amount,paidBy,date,note,category,splitBetween,splitType,shares,photo:currentPhoto,paidSettlements:{}};
   t.expenses.push(exp);
   logHistory(t,'added', getWho(t.id)||paidBy, desc, amount);
   closeModal('modalExpense'); renderAll();
@@ -2678,7 +2953,7 @@ async function saveExpense(){
       photoKey = await uploadPhotoToR2(currentPhoto, t.id);
       if(photoKey) exp.photo = photoKey; // replace local base64 with R2 key
     }
-    await api('POST','/expenses',{id:exp.id,tripId:t.id,desc,amount,paidBy,date,note,category,splitBetween,photoKey,paidSettlements:{}});
+    await api('POST','/expenses',{id:exp.id,tripId:t.id,desc,amount,paidBy,date,note,category,splitBetween,splitType:exp.splitType,shares:exp.shares,photoKey,paidSettlements:{}});
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
   });
 }
