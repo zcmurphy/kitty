@@ -1307,7 +1307,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'ac97ba6';
+const REV = 'ef0230e';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1373,7 +1373,10 @@ async function uploadPhotoToR2(dataUrl, tripId) {
       headers: { 'Content-Type': ct, 'X-Invite-Token': token },
       body: binary,
     });
-    if(!r.ok) throw new Error('Photo upload failed');
+    if(!r.ok) {
+      const errBody = await r.json().catch(()=>({error:r.statusText}));
+      throw new Error(errBody.error || 'Photo upload failed ('+r.status+')');
+    }
     const { key } = await r.json();
     setSyncDot('ok');
     return key; // store key in D1, not the raw base64
@@ -3027,9 +3030,19 @@ async function saveExpense(){
     let photoKey = null;
     if(currentPhoto && currentPhoto.startsWith('data:')) {
       photoKey = await uploadPhotoToR2(currentPhoto, t.id);
-      if(photoKey) exp.photo = photoKey; // replace local base64 with R2 key
+      if(photoKey) {
+        exp.photo = photoKey; // replace local base64 with R2 key
+      }
+      // If R2 isn't set up, exp.photo stays as base64 — still works, just stored in D1
     }
-    await api('POST','/expenses',{id:exp.id,tripId:t.id,desc,amount,paidBy,date,note,category,splitBetween,splitType:exp.splitType,shares:exp.shares,photoKey,paidSettlements:{}});
+    await api('POST','/expenses',{
+      id:exp.id, tripId:t.id, desc, amount, paidBy, date, note, category,
+      splitBetween, splitType:exp.splitType, shares:exp.shares,
+      photoKey: photoKey,
+      // send base64 only if R2 upload failed and no key
+      photo: photoKey ? null : (currentPhoto||null),
+      paidSettlements:{}
+    });
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
   });
 }

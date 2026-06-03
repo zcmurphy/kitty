@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: ac97ba6
+//  Kitty API Worker  rev: ef0230e
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = 'ac97ba6';
+const REV = 'ef0230e';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -413,7 +413,7 @@ export default {
             `INSERT INTO expenses (id,trip_id,desc,amount,paid_by,date,note,category,split_between,photo,paid_settlements,split_type,shares,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
           ).bind(b.id, b.tripId, b.desc, b.amount, b.paidBy, b.date||null, b.note||null,
                  b.category||'other', JSON.stringify(b.splitBetween||[]),
-                 b.photoKey||null, JSON.stringify(b.paidSettlements||{}),
+                 (b.photoKey||b.photo&&!b.photo.startsWith('data:')?b.photoKey||b.photo:null)||null, JSON.stringify(b.paidSettlements||{}),
                  b.splitType||'even', b.shares ? JSON.stringify(b.shares) : null,
                  new Date().toISOString()).run();
           return respond({ ok: true });
@@ -423,10 +423,12 @@ export default {
           const authed = await validateAccess(req, env, b.tripId, sess);
           if (!authed) return respond({ error: 'Unauthorized' }, 401);
           await env.DB.prepare(
-            `UPDATE expenses SET desc=?,amount=?,paid_by=?,date=?,note=?,category=?,split_between=?,photo=?,paid_settlements=? WHERE id=?`
+            `UPDATE expenses SET desc=?,amount=?,paid_by=?,date=?,note=?,category=?,split_between=?,photo=?,paid_settlements=?,split_type=?,shares=? WHERE id=?`
           ).bind(b.desc, b.amount, b.paidBy, b.date||null, b.note||null, b.category||'other',
-                 JSON.stringify(b.splitBetween||[]), b.photoKey||null,
-                 JSON.stringify(b.paidSettlements||{}), id).run();
+                 JSON.stringify(b.splitBetween||[]), (b.photoKey||(b.photo&&!b.photo.startsWith('data:')?b.photo:null))||null,
+                 JSON.stringify(b.paidSettlements||{}),
+                 b.splitType||'even', b.shares ? JSON.stringify(b.shares) : null,
+                 id).run();
           return respond({ ok: true });
         }
         if (method === 'DELETE' && id) {
@@ -446,15 +448,23 @@ export default {
           const tripId = url.searchParams.get('tripId');
           const authed = await validateAccess(req, env, tripId, sess);
           if (!authed) return respond({ error: 'Unauthorized' }, 401);
+          if (!env.R2) return respond({ error: 'R2 not configured — set up kitty-assets bucket' }, 503);
           const ct  = req.headers.get('Content-Type') || 'image/jpeg';
           const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
           const key = `photos/${tripId}/${crypto.randomUUID()}.${ext}`;
-          await uploadPhoto(env, key, req.body, ct);
+          try {
+            await uploadPhoto(env, key, req.body, ct);
+          } catch(e) {
+            console.error('R2 upload error:', e);
+            return respond({ error: 'Upload failed: ' + e.message }, 500);
+          }
           return respond({ key, url: `${url.origin}/api/photos/${key}` });
         }
-        if (method === 'GET' && id) {
+        if (method === 'GET') {
           if (!env.R2) return respond({ error: 'R2 not configured' }, 503);
-          const key = url.pathname.replace('/api/photos/', '');
+          // Key is everything after /api/photos/ — may contain slashes
+          const key = url.pathname.replace(/^\/api\/photos\//, '');
+          if (!key) return respond({ error: 'No key specified' }, 400);
           const obj = await env.R2.get(key);
           if (!obj) return respond({ error: 'Not found' }, 404);
           return new Response(obj.body, {
