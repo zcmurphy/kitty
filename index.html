@@ -1307,7 +1307,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'a639712';
+const REV = 'ac97ba6';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1497,6 +1497,7 @@ async function loadTrip(id) {
         id: e.id, desc: e.desc, amount: e.amount, paidBy: e.paid_by,
         date: e.date||'', note: e.note||'', category: e.category||'other',
         splitBetween: e.splitBetween||[], photo: e.photo||null,
+        splitType: e.splitType||'even', shares: e.shares||null,
         paidSettlements: e.paidSettlements||{}
       })),
       history: (data.history||[]).map(h=>({
@@ -1870,7 +1871,7 @@ function showExpenseDetail(id) {
             logHistory(t,'edited',person,exp.desc,share,`${person}'s share marked unpaid`);
             renderAll(); showExpenseDetail(id);
             await save(async()=>{
-              await api('PUT','/expenses/'+exp.id,{desc:exp.desc,amount:exp.amount,paidBy:exp.paidBy,date:exp.date,note:exp.note,category:exp.category,splitBetween:exp.splitBetween,photo:exp.photo,paidSettlements:exp.paidSettlements});
+              await api('PUT','/expenses/'+exp.id,{desc:exp.desc,amount:exp.amount,paidBy:exp.paidBy,date:exp.date,note:exp.note,category:exp.category,splitBetween:exp.splitBetween,splitType:exp.splitType||'even',shares:exp.shares||null,photo:exp.photo,paidSettlements:exp.paidSettlements});
               await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
             });
           });
@@ -1881,7 +1882,7 @@ function showExpenseDetail(id) {
             logHistory(t,'settled',person,exp.desc,share,`${person} paid back ${each} to ${exp.paidBy}`);
             renderAll(); showExpenseDetail(id);
             await save(async()=>{
-              await api('PUT','/expenses/'+exp.id,{desc:exp.desc,amount:exp.amount,paidBy:exp.paidBy,date:exp.date,note:exp.note,category:exp.category,splitBetween:exp.splitBetween,photo:exp.photo,paidSettlements:exp.paidSettlements});
+              await api('PUT','/expenses/'+exp.id,{desc:exp.desc,amount:exp.amount,paidBy:exp.paidBy,date:exp.date,note:exp.note,category:exp.category,splitBetween:exp.splitBetween,splitType:exp.splitType||'even',shares:exp.shares||null,photo:exp.photo,paidSettlements:exp.paidSettlements});
               await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
             });
           });
@@ -2279,7 +2280,7 @@ async function saveEditExpense(){
   logHistory(t,'edited',who,desc,amount,changes.length?changes.join(', '):null);
   closeModal('modalEditExpense'); renderAll();
   await save(async()=>{
-    await api('PUT','/expenses/'+editingExpenseId,{desc,amount,paidBy,date,note,category,splitBetween,photo:editPhoto,paidSettlements:exp.paidSettlements||{}});
+    await api('PUT','/expenses/'+editingExpenseId,{desc,amount,paidBy,date,note,category,splitBetween,splitType,shares,photoKey:typeof editPhoto==='string'&&!editPhoto.startsWith('data:')?editPhoto:null,photo:editPhoto,paidSettlements:exp.paidSettlements||{}});
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
   });
 }

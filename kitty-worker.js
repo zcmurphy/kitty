@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 71828e8
+//  Kitty API Worker  rev: ac97ba6
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '71828e8';
+const REV = 'ac97ba6';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -301,6 +301,8 @@ export default {
           expenses.forEach(e => {
             e.splitBetween    = JSON.parse(e.split_between   || '[]');
             e.paidSettlements = JSON.parse(e.paid_settlements || '{}');
+            e.splitType       = e.split_type || 'even';
+            e.shares          = e.shares ? JSON.parse(e.shares) : null;
             if (e.photo) e.photoUrl = `${url.origin}/api/photos/${e.photo}`;
           });
           if (trip.cover_photo) trip.coverPhotoUrl = `${url.origin}/api/photos/${trip.cover_photo}`;
@@ -408,10 +410,12 @@ export default {
           const authed = await validateAccess(req, env, b.tripId, sess);
           if (!authed) return respond({ error: 'Unauthorized' }, 401);
           await env.DB.prepare(
-            `INSERT INTO expenses (id,trip_id,desc,amount,paid_by,date,note,category,split_between,photo,paid_settlements,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+            `INSERT INTO expenses (id,trip_id,desc,amount,paid_by,date,note,category,split_between,photo,paid_settlements,split_type,shares,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
           ).bind(b.id, b.tripId, b.desc, b.amount, b.paidBy, b.date||null, b.note||null,
                  b.category||'other', JSON.stringify(b.splitBetween||[]),
-                 b.photoKey||null, JSON.stringify(b.paidSettlements||{}), new Date().toISOString()).run();
+                 b.photoKey||null, JSON.stringify(b.paidSettlements||{}),
+                 b.splitType||'even', b.shares ? JSON.stringify(b.shares) : null,
+                 new Date().toISOString()).run();
           return respond({ ok: true });
         }
         if (method === 'PUT' && id) {
