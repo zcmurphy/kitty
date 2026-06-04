@@ -1408,7 +1408,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'e817c6e';
+const REV = '1d8e793';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -2610,6 +2610,7 @@ async function saveEditExpense(){
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
     uploadStatusStep('edit-us-save','ok','saved ✓','edit');
     lsSave();
+    await new Promise(r => setTimeout(r, 900));
     closeModal('modalEditExpense'); renderAll();
   } catch(e) {
     uploadStatusStep('edit-us-save','err',e.message,'edit');
@@ -3456,7 +3457,8 @@ async function saveExpense(){
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
     uploadStatusSaveDone(true, 'saved ✓');
     lsSave();
-    // Close modal only after successful save
+    // Brief pause so user sees the green checkmark before modal closes
+    await new Promise(r => setTimeout(r, 900));
     closeModal('modalExpense');
     renderAll();
   } catch(e) {
