@@ -861,6 +861,29 @@
     color: var(--ink-3); margin-left: auto;
   }
 
+
+  /* ── PHOTO UPLOAD DEBUG ── */
+  .upload-status {
+    margin-top: 8px; border-radius: 8px; overflow: hidden;
+    border: 1.5px solid var(--border); display: none; font-size: 11px;
+    font-family: 'Roboto Mono', monospace;
+  }
+  .upload-status.visible { display: block; }
+  .upload-status-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .upload-status-row:last-child { border-bottom: none; }
+  .upload-status-row.pending  { color: var(--ink-3); }
+  .upload-status-row.running  { color: var(--amber); background: var(--amber-bg); }
+  .upload-status-row.ok       { color: var(--green); background: var(--green-bg); }
+  .upload-status-row.err      { color: var(--red);   background: var(--red-bg); }
+  .us-icon { width: 14px; flex-shrink: 0; text-align: center; }
+  .us-label { flex: 1; }
+  .us-detail { color: var(--ink-3); font-size: 10px; max-width: 180px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .us-detail.err { color: var(--red); }
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1086,6 +1109,23 @@
           <div class="pz-text" id="pzText">Tap to take a photo or upload</div>
         </div>
         <img class="photo-preview" id="photoPreview" alt="Receipt preview">
+        <div class="upload-status" id="uploadStatus">
+          <div class="upload-status-row pending" id="us-sign">
+            <span class="us-icon">○</span>
+            <span class="us-label">Request presigned URL</span>
+            <span class="us-detail" id="us-sign-detail"></span>
+          </div>
+          <div class="upload-status-row pending" id="us-put">
+            <span class="us-icon">○</span>
+            <span class="us-label">Upload to R2</span>
+            <span class="us-detail" id="us-put-detail"></span>
+          </div>
+          <div class="upload-status-row pending" id="us-save">
+            <span class="us-icon">○</span>
+            <span class="us-label">Save key to database</span>
+            <span class="us-detail" id="us-save-detail"></span>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1307,7 +1347,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '8e131d3';
+const REV = '7999fbe';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1359,33 +1399,80 @@ async function api(method, path, body, tripId) {
 }
 
 // Upload a photo (base64 dataURL) to R2 via presigned URL, return the key
+
+function uploadStatusReset() {
+  const panel = document.getElementById('uploadStatus');
+  if(!panel) return;
+  panel.classList.remove('visible');
+  ['us-sign','us-put','us-save'].forEach(id=>{
+    const row = document.getElementById(id);
+    if(row) { row.className='upload-status-row pending'; row.querySelector('.us-icon').textContent='○'; }
+  });
+  ['us-sign-detail','us-put-detail','us-save-detail'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) { el.textContent=''; el.className='us-detail'; }
+  });
+}
+
+function uploadStatusStep(stepId, state, detail='') {
+  const panel = document.getElementById('uploadStatus');
+  if(panel) panel.classList.add('visible');
+  const row = document.getElementById(stepId);
+  if(!row) return;
+  const icons = { running:'⟳', ok:'✓', err:'✗', pending:'○' };
+  row.className = 'upload-status-row ' + state;
+  row.querySelector('.us-icon').textContent = icons[state]||'○';
+  const det = document.getElementById(stepId+'-detail');
+  if(det) {
+    det.textContent = detail;
+    det.className = 'us-detail' + (state==='err'?' err':'');
+  }
+}
+
 async function uploadPhotoToR2(dataUrl, tripId) {
   if(!dataUrl || !dataUrl.startsWith('data:')) return null;
   const [header, b64] = dataUrl.split(',');
   const ct  = header.match(/data:(.*?);/)?.[1] || 'image/jpeg';
   const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
   const binary = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+
+  uploadStatusReset();
   setSyncDot('syncing');
+
+  // ── Step 1: get presigned URL ─────────────────────────────
+  uploadStatusStep('us-sign', 'running', 'calling '+API+'/photos/sign');
+  let key, presignedUrl;
   try {
-    // Step 1: get presigned URL from Worker
     const signRes = await fetch(
       API+'/photos/sign?tripId='+encodeURIComponent(tripId)+'&ext='+ext, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'X-Invite-Token': getToken(tripId) },
     });
+    const signBody = await signRes.json().catch(()=>({error:signRes.statusText}));
     if(!signRes.ok) {
-      const e = await signRes.json().catch(()=>({error:signRes.statusText}));
-      // R2 creds not set up — fall back to base64
+      uploadStatusStep('us-sign', 'err', signBody.error||'HTTP '+signRes.status);
       if(signRes.status===503) {
-        console.warn('R2 presign unavailable, using base64 fallback:', e.error);
-        return null; // caller will use base64
+        toast('R2 not configured — storing photo locally', '', 3000);
+        return null; // base64 fallback
       }
-      throw new Error(e.error || 'Could not get upload URL');
+      setSyncDot('err');
+      toast('Presign failed: '+(signBody.error||signRes.status), 'error', 4000);
+      return null;
     }
-    const { key, url: presignedUrl } = await signRes.json();
+    key = signBody.key;
+    presignedUrl = signBody.url;
+    uploadStatusStep('us-sign', 'ok', key);
+  } catch(e) {
+    uploadStatusStep('us-sign', 'err', e.message);
+    setSyncDot('err');
+    toast('Network error getting upload URL: '+e.message, 'error', 4000);
+    return null;
+  }
 
-    // Step 2: PUT directly to R2 (no auth header — presigned URL has it baked in)
+  // ── Step 2: PUT directly to R2 ───────────────────────────
+  uploadStatusStep('us-put', 'running', Math.round(binary.length/1024)+'KB → R2');
+  try {
     const uploadRes = await fetch(presignedUrl, {
       method: 'PUT',
       headers: { 'Content-Type': ct },
@@ -1393,18 +1480,31 @@ async function uploadPhotoToR2(dataUrl, tripId) {
     });
     if(!uploadRes.ok) {
       const txt = await uploadRes.text().catch(()=>'');
-      throw new Error('R2 upload failed ('+uploadRes.status+'): '+txt.slice(0,200));
+      const detail = 'HTTP '+uploadRes.status+': '+txt.slice(0,120);
+      uploadStatusStep('us-put', 'err', detail);
+      setSyncDot('err');
+      toast('R2 upload failed ('+uploadRes.status+')', 'error', 4000);
+      console.error('R2 PUT failed:', detail);
+      return null;
     }
-
-    setSyncDot('ok');
-    toast('Photo uploaded', 'success', 1500);
-    return key;
+    uploadStatusStep('us-put', 'ok', 'uploaded '+Math.round(binary.length/1024)+'KB');
   } catch(e) {
+    uploadStatusStep('us-put', 'err', e.message);
     setSyncDot('err');
-    toast('Photo upload failed: '+e.message, 'error', 4000);
-    console.error('uploadPhotoToR2:', e);
-    return null; // fall back to base64
+    toast('R2 upload error: '+e.message, 'error', 4000);
+    return null;
   }
+
+  // ── Step 3: mark save pending (caller handles DB write) ──
+  uploadStatusStep('us-save', 'running', 'saving key…');
+  setSyncDot('ok');
+  toast('Photo uploaded ✓', 'success', 1800);
+  return key;
+}
+
+// Call this after the expense is saved to D1 to confirm step 3
+function uploadStatusSaveDone(ok, detail='') {
+  uploadStatusStep('us-save', ok?'ok':'err', detail);
 }
 
 function photoUrl(keyOrData) {
@@ -2305,6 +2405,7 @@ async function saveEditExpense(){
   await save(async()=>{
     await api('PUT','/expenses/'+editingExpenseId,{desc,amount,paidBy,date,note,category,splitBetween,splitType,shares,photoKey:typeof editPhoto==='string'&&!editPhoto.startsWith('data:')?editPhoto:null,photo:editPhoto,paidSettlements:exp.paidSettlements||{}});
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
+    uploadStatusSaveDone(true, 'expense saved');
   });
 }
 
@@ -2847,6 +2948,7 @@ function showExpenseModal(){
   document.getElementById('eDate').value=today();
   document.getElementById('photoPreview').style.display='none';
   document.getElementById('photoInput').value='';
+  uploadStatusReset();
   document.getElementById('pzIcon').textContent='📷';
   document.getElementById('pzText').textContent='Tap to take a photo or upload';
   currentPhoto=null;
