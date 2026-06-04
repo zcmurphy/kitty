@@ -1364,7 +1364,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '5e872e3';
+const REV = '5a2e0d5';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1582,23 +1582,53 @@ async function loadFromAPI() {
     }
 
     // ── Step 6: build trip list — union of server + local cache ──
-    // Server trips (authoritative names/dates)
-    const serverTrips = (sess.trips || []).map(t => ({
-      id: t.id, name: t.name, code: t.code || '',
-      startDate: t.start_date || '', endDate: t.end_date || '',
-      icon: t.icon || '', coverPhoto: t.cover_photo || t.coverPhoto || null,
-      people: [], expenses: [], history: [], settledPayments: [],
-      _loaded: false
-    }));
+    // Keep a snapshot of what we already have loaded locally
+    const prevTrips = {};
+    state.trips.forEach(t => { prevTrips[t.id] = t; });
 
-    // Merge: start with server trips, then add any local-only trips
-    // (trips where we have a token locally but server didn't return them yet)
+    const serverTrips = (sess.trips || []).map(t => {
+      const prev = prevTrips[t.id];
+      // If we have fully-loaded local data, keep it — just update metadata from server
+      if (prev && prev._loaded) {
+        return {
+          ...prev,
+          name:       t.name,
+          code:       t.code || prev.code || '',
+          startDate:  t.start_date || prev.startDate || '',
+          endDate:    t.end_date   || prev.endDate   || '',
+          icon:       t.icon       || prev.icon      || '',
+          coverPhoto: t.cover_photo || t.coverPhoto  || prev.coverPhoto || null,
+        };
+      }
+      // Not loaded yet — use server summary, preserve any partial local data
+      return {
+        id:          t.id,
+        name:        t.name,
+        code:        t.code || '',
+        startDate:   t.start_date || '',
+        endDate:     t.end_date   || '',
+        icon:        t.icon       || '',
+        coverPhoto:  t.cover_photo || t.coverPhoto || null,
+        // Preserve local people/expenses if available, else empty
+        people:      prev?.people      || [],
+        expenses:    prev?.expenses    || [],
+        history:     prev?.history     || [],
+        settledPayments: prev?.settledPayments || [],
+        _loaded:     prev?._loaded     || false,
+        // Store server summary counts for home card display when not loaded
+        _peopleCount:   t.people_count   || prev?._peopleCount   || 0,
+        _expenseCount:  t.expense_count  || prev?._expenseCount  || 0,
+        _totalAmount:   t.total_amount   || prev?._totalAmount   || null,
+      };
+    });
+
+    // Add any local-only trips not returned by server
     const serverIds = new Set(serverTrips.map(t => t.id));
     const localOnly = state.trips.filter(t => !serverIds.has(t.id) && localTokens[t.id]);
 
     state.trips = [
       ...serverTrips,
-      ...localOnly.map(t => ({ ...t, _loaded: false }))
+      ...localOnly
     ];
 
     lsSave();
@@ -1699,10 +1729,16 @@ function renderHome() {
     return;
   }
   state.trips.forEach((trip,i) => {
-    const total=trip.expenses.reduce((s,e)=>s+e.amount,0);
+    // Use full data if loaded, otherwise fall back to server summary counts
+    const total = trip._loaded
+      ? trip.expenses.reduce((s,e)=>s+e.amount,0)
+      : (trip._totalAmount || 0);
+    const peopleCount = trip._loaded ? trip.people.length : (trip._peopleCount || 0);
     const card=document.createElement('div');
     card.className='trip-card';
-    const avatars=trip.people.slice(0,5).map(p=>`<div class="av-sm" style="background:${pColor(p,trip.people)}">${initials(p)}</div>`).join('');
+    const avatars = trip._loaded
+      ? trip.people.slice(0,5).map(p=>`<div class="av-sm" style="background:${pColor(p,trip.people)}">${initials(p)}</div>`).join('')
+      : '';
     const hasCover = !!(trip.coverPhoto);
     if(hasCover) card.classList.add('has-cover');
     const coverSrc = trip.coverPhoto
@@ -1712,7 +1748,7 @@ function renderHome() {
       ${coverSrc ? `<img class="trip-card-cover" src="${coverSrc}" alt="Trip cover">` : ''}
       <div class="trip-card-header">
         <div class="trip-card-icon" style="background:${pColor(trip.people[0]||'A',trip.people||['A'])}18">${trip.icon||tripIcon(i)}</div>
-        <div class="trip-card-badge">${trip.people.length} people</div>
+        <div class="trip-card-badge">${peopleCount} people</div>
       </div>
       <div class="trip-card-name">${esc(trip.name)}</div>
       <div class="trip-card-meta">${trip.startDate||''}${trip.endDate?' – '+trip.endDate:''}</div>
