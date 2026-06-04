@@ -1408,7 +1408,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '2a2fb41';
+const REV = '500ac9f';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -2219,6 +2219,13 @@ async function handleCoverPhoto(e) {
     // Upload to R2 — use current trip id
     const t = currentTrip();
     if(t) {
+      // Delete old cover photo before uploading new one
+      if(t.coverPhoto && !t.coverPhoto.startsWith('data:')) {
+        deletePhotoFromR2(t.coverPhoto, t.id);
+      }
+      if(settingsCoverPhoto && typeof settingsCoverPhoto === 'string' && !settingsCoverPhoto.startsWith('data:')) {
+        deletePhotoFromR2(settingsCoverPhoto, t.id);
+      }
       const key = await uploadPhotoToR2(dataUrl, t.id);
       if(key) {
         settingsCoverPhoto = key; // store R2 key
@@ -2238,7 +2245,16 @@ async function handleCoverPhoto(e) {
 }
 
 function removeCoverPhoto() {
-  settingsCoverPhoto = false; // signal to delete
+  const t = currentTrip();
+  // Delete existing cover photo from R2 if it's an R2 key
+  if(t && t.coverPhoto && !t.coverPhoto.startsWith('data:')) {
+    deletePhotoFromR2(t.coverPhoto, t.id);
+  }
+  // Also delete if we uploaded a new one during this settings session
+  if(settingsCoverPhoto && typeof settingsCoverPhoto === 'string' && !settingsCoverPhoto.startsWith('data:')) {
+    if(t) deletePhotoFromR2(settingsCoverPhoto, t.id);
+  }
+  settingsCoverPhoto = false; // signal to clear D1 reference
   document.getElementById('coverPreviewWrap').style.display = 'none';
   document.getElementById('coverUploadZone').style.display = '';
   document.getElementById('coverPhotoInput').value = '';
@@ -2513,6 +2529,12 @@ function selEditCat(el){ document.querySelectorAll('#editCatGrid .cat-chip').for
 
 function handleEditPhoto(e){
   const file=e.target.files[0]; if(!file) return;
+
+  // If replacing an existing R2 photo, delete the old one
+  const t = currentTrip();
+  if(editPhoto && !editPhoto.startsWith('data:') && t) {
+    deletePhotoFromR2(editPhoto, t.id);
+  }
 
   uploadStatusReset('edit');
   const panel = document.getElementById('editUploadStatus');
@@ -3229,8 +3251,25 @@ function splitAll(ns){ const p=ns==='ed'?'editSplit':'eSplit'; document.querySel
 function splitNone(ns){ const p=ns==='ed'?'editSplit':'eSplit'; document.querySelectorAll('#'+p+' .p-chip').forEach(c=>c.classList.remove('selected')); renderSharesGrid(ns); }
 
 
+
+// Delete a photo from R2 + D1 reference via Worker
+async function deletePhotoFromR2(key, tripId) {
+  if(!key || key.startsWith('data:')) return; // nothing to delete in R2
+  try {
+    await api('DELETE', '/photos/'+key+'?tripId='+encodeURIComponent(tripId));
+    console.log('Deleted from R2:', key);
+  } catch(e) {
+    console.warn('R2 delete failed (non-critical):', e.message);
+  }
+}
+
 function deleteReceiptPhoto(ctx) {
+  const t = currentTrip();
   if(ctx==='add') {
+    // If already uploaded to R2, delete it
+    if(currentPhoto && !currentPhoto.startsWith('data:') && t) {
+      deletePhotoFromR2(currentPhoto, t.id);
+    }
     currentPhoto = null;
     const wrap = document.getElementById('photoPreviewWrap');
     if(wrap) wrap.classList.remove('visible');
@@ -3239,6 +3278,10 @@ function deleteReceiptPhoto(ctx) {
     document.getElementById('pzText').textContent='Tap to take a photo or upload';
     uploadStatusReset();
   } else {
+    // For edit modal: store old key so saveEditExpense knows to delete it
+    if(editPhoto && !editPhoto.startsWith('data:') && t) {
+      deletePhotoFromR2(editPhoto, t.id);
+    }
     editPhoto = null;
     const wrap = document.getElementById('editPhotoPreviewWrap');
     if(wrap) wrap.classList.remove('visible');
@@ -3251,6 +3294,12 @@ function deleteReceiptPhoto(ctx) {
 
 function handlePhoto(e){
   const file=e.target.files[0]; if(!file) return;
+
+  // If replacing an existing R2 photo, delete the old one first
+  const t = currentTrip();
+  if(currentPhoto && !currentPhoto.startsWith('data:') && t) {
+    deletePhotoFromR2(currentPhoto, t.id);
+  }
 
   // Show status panel immediately — before file is even read
   uploadStatusReset();
