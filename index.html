@@ -1347,7 +1347,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '7999fbe';
+const REV = 'd294a8b';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -2979,12 +2979,32 @@ function splitNone(ns){ const p=ns==='ed'?'editSplit':'eSplit'; document.querySe
 function handlePhoto(e){
   const file=e.target.files[0]; if(!file) return;
   const reader=new FileReader();
-  reader.onload=ev=>{
+  reader.onload=async ev=>{
     currentPhoto=ev.target.result;
     const prev=document.getElementById('photoPreview');
     prev.src=currentPhoto; prev.style.display='block';
-    document.getElementById('pzIcon').textContent='✅';
-    document.getElementById('pzText').textContent='Photo attached';
+    document.getElementById('pzIcon').textContent='⏫';
+    document.getElementById('pzText').textContent='Uploading…';
+
+    // Upload immediately on selection — gives instant feedback
+    const t = currentTrip();
+    if(t) {
+      const key = await uploadPhotoToR2(currentPhoto, t.id);
+      if(key) {
+        currentPhoto = key;  // store R2 key instead of base64
+        document.getElementById('pzIcon').textContent='✅';
+        document.getElementById('pzText').textContent='Photo uploaded to R2';
+        uploadStatusSaveDone(true, 'ready to save with expense');
+      } else {
+        // R2 failed — staying as base64 fallback
+        document.getElementById('pzIcon').textContent='⚠️';
+        document.getElementById('pzText').textContent='Stored locally (R2 unavailable)';
+      }
+    } else {
+      // No trip context yet — just store base64, upload on save
+      document.getElementById('pzIcon').textContent='✅';
+      document.getElementById('pzText').textContent='Photo attached';
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -3149,23 +3169,22 @@ async function saveExpense(){
   logHistory(t,'added', getWho(t.id)||paidBy, desc, amount);
   closeModal('modalExpense'); renderAll();
   await save(async()=>{
-    let photoKey = null;
-    if(currentPhoto && currentPhoto.startsWith('data:')) {
-      photoKey = await uploadPhotoToR2(currentPhoto, t.id);
-      if(photoKey) {
-        exp.photo = photoKey; // replace local base64 with R2 key
-      }
-      // If R2 isn't set up, exp.photo stays as base64 — still works, just stored in D1
-    }
+    // Photo was already uploaded to R2 on file select.
+    // currentPhoto is either an R2 key (no 'data:' prefix) or base64 fallback.
+    const isR2Key = currentPhoto && !currentPhoto.startsWith('data:');
+    const photoKey = isR2Key ? currentPhoto : null;
+    const photoB64 = isR2Key ? null : (currentPhoto||null);
+    if(isR2Key) exp.photo = photoKey;
+
     await api('POST','/expenses',{
       id:exp.id, tripId:t.id, desc, amount, paidBy, date, note, category,
       splitBetween, splitType:exp.splitType, shares:exp.shares,
-      photoKey: photoKey,
-      // send base64 only if R2 upload failed and no key
-      photo: photoKey ? null : (currentPhoto||null),
+      photoKey,
+      photo: photoB64,
       paidSettlements:{}
     });
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
+    uploadStatusSaveDone(true, 'expense saved');
   });
 }
 
