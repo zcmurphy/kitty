@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 5a2e0d5
+//  Kitty API Worker  rev: e817c6e
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '5a2e0d5';
+const REV = 'e817c6e';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -502,7 +502,7 @@ export default {
             `INSERT INTO expenses (id,trip_id,desc,amount,paid_by,date,note,category,split_between,photo,paid_settlements,split_type,shares,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
           ).bind(b.id, b.tripId, b.desc, b.amount, b.paidBy, b.date||null, b.note||null,
                  b.category||'other', JSON.stringify(b.splitBetween||[]),
-                 (b.photoKey||b.photo&&!b.photo.startsWith('data:')?b.photoKey||b.photo:null)||null, JSON.stringify(b.paidSettlements||{}),
+                 (b.photoKey||(b.photo&&typeof b.photo==='string'&&!b.photo.startsWith('data:')?b.photo:null))||null, JSON.stringify(b.paidSettlements||{}),
                  b.splitType||'even', b.shares ? JSON.stringify(b.shares) : null,
                  new Date().toISOString()).run();
           return respond({ ok: true });
@@ -514,7 +514,7 @@ export default {
           await env.DB.prepare(
             `UPDATE expenses SET desc=?,amount=?,paid_by=?,date=?,note=?,category=?,split_between=?,photo=?,paid_settlements=?,split_type=?,shares=? WHERE id=?`
           ).bind(b.desc, b.amount, b.paidBy, b.date||null, b.note||null, b.category||'other',
-                 JSON.stringify(b.splitBetween||[]), (b.photoKey||(b.photo&&!b.photo.startsWith('data:')?b.photo:null))||null,
+                 JSON.stringify(b.splitBetween||[]), (b.photoKey||(b.photo&&typeof b.photo==='string'&&!b.photo.startsWith('data:')?b.photo:null))||null,
                  JSON.stringify(b.paidSettlements||{}),
                  b.splitType||'even', b.shares ? JSON.stringify(b.shares) : null,
                  id).run();
