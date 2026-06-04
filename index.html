@@ -885,6 +885,43 @@
   .us-detail { color: var(--ink-3); font-size: 10px; max-width: 180px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .us-detail.err { color: var(--red); }
+
+  /* ── DELETE RECEIPT BUTTON ── */
+  .photo-preview-wrap { position: relative; display: none; margin-top: 10px; }
+  .photo-preview-wrap.visible { display: block; }
+  .photo-preview-wrap img {
+    width: 100%; height: 140px; object-fit: cover;
+    border-radius: 8px; border: 1.5px solid var(--border); display: block;
+  }
+  .photo-delete-btn {
+    position: absolute; top: 6px; right: 6px;
+    background: rgba(0,0,0,0.55); border: none; border-radius: 50%;
+    width: 26px; height: 26px; cursor: pointer; color: #fff;
+    font-size: 13px; display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s; line-height: 1;
+  }
+  .photo-delete-btn:hover { background: rgba(220,38,38,0.85); }
+
+  /* ── PERCENTAGE SLIDER ── */
+  .share-row-slider {
+    display: flex; align-items: center; gap: 8px; flex: 1;
+  }
+  .share-slider {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 100px;
+    background: var(--border); outline: none; cursor: pointer;
+    accent-color: var(--ink);
+  }
+  .share-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px;
+    border-radius: 50%; background: var(--ink); cursor: pointer;
+    border: 2px solid var(--surface); box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  }
+  .share-pct-value {
+    font-family: 'Roboto Mono', monospace; font-size: 13px; font-weight: 600;
+    width: 38px; text-align: right; color: var(--ink); flex-shrink: 0;
+  }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1109,7 +1146,10 @@
           <div class="pz-icon" id="pzIcon">📷</div>
           <div class="pz-text" id="pzText">Tap to take a photo or upload</div>
         </div>
-        <img class="photo-preview" id="photoPreview" alt="Receipt preview">
+        <div class="photo-preview-wrap" id="photoPreviewWrap">
+          <img id="photoPreview" alt="Receipt preview">
+          <button class="photo-delete-btn" onclick="deleteReceiptPhoto('add')" title="Remove photo">✕</button>
+        </div>
         <div class="upload-status" id="uploadStatus">
           <div class="upload-status-row pending" id="us-sign">
             <span class="us-icon">○</span>
@@ -1208,7 +1248,10 @@
           <div class="pz-icon" id="editPzIcon">📷</div>
           <div class="pz-text" id="editPzText">Tap to replace photo</div>
         </div>
-        <img class="photo-preview" id="editPhotoPreview" alt="Receipt preview">
+        <div class="photo-preview-wrap" id="editPhotoPreviewWrap">
+          <img id="editPhotoPreview" alt="Receipt preview">
+          <button class="photo-delete-btn" onclick="deleteReceiptPhoto('edit')" title="Remove photo">✕</button>
+        </div>
         <div class="upload-status" id="editUploadStatus">
           <div class="upload-status-row pending" id="edit-us-sign">
             <span class="us-icon">○</span>
@@ -1365,7 +1408,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'ef4005d';
+const REV = '651cd8d';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -2387,13 +2430,15 @@ function showEditExpenseModal(id) {
   if(exp.photo){
     const isR2 = exp.photo && !exp.photo.startsWith('data:');
     document.getElementById('editPhotoPreview').src = photoUrl(exp.photo);
-    document.getElementById('editPhotoPreview').style.display='block';
+    const ewrap2=document.getElementById('editPhotoPreviewWrap');
+    if(ewrap2) ewrap2.classList.add('visible');
     document.getElementById('editPzIcon').textContent='✅';
     document.getElementById('editPzText').textContent = isR2
       ? 'Photo in R2 — tap to replace'
       : 'Photo attached — tap to replace';
   } else {
-    document.getElementById('editPhotoPreview').style.display='none';
+    const ewrap2=document.getElementById('editPhotoPreviewWrap');
+    if(ewrap2) ewrap2.classList.remove('visible');
     document.getElementById('editPzIcon').textContent='📷';
     document.getElementById('editPzText').textContent='Tap to replace photo';
   }
@@ -2438,7 +2483,8 @@ function handleEditPhoto(e){
   reader.onload=async ev=>{
     editPhoto=ev.target.result;
     document.getElementById('editPhotoPreview').src=editPhoto.startsWith('data:')?editPhoto:photoUrl(editPhoto);
-    document.getElementById('editPhotoPreview').style.display='block';
+    const ewrap=document.getElementById('editPhotoPreviewWrap');
+    if(ewrap) ewrap.classList.add('visible');
     document.getElementById('editPzText').textContent='Uploading to R2…';
 
     const t=currentTrip();
@@ -3110,7 +3156,7 @@ function showExpenseModal(){
   document.getElementById('eAmount').value='';
   document.getElementById('eNote').value='';
   document.getElementById('eDate').value=today();
-  document.getElementById('photoPreview').style.display='none';
+  const _pw=document.getElementById('photoPreviewWrap'); if(_pw) _pw.classList.remove('visible');
   document.getElementById('photoInput').value='';
   uploadStatusReset();
   document.getElementById('pzIcon').textContent='📷';
@@ -3140,6 +3186,27 @@ function selCat(el){ document.querySelectorAll('#catGrid .cat-chip').forEach(c=>
 function splitAll(ns){ const p=ns==='ed'?'editSplit':'eSplit'; document.querySelectorAll('#'+p+' .p-chip').forEach(c=>c.classList.add('selected')); renderSharesGrid(ns); }
 function splitNone(ns){ const p=ns==='ed'?'editSplit':'eSplit'; document.querySelectorAll('#'+p+' .p-chip').forEach(c=>c.classList.remove('selected')); renderSharesGrid(ns); }
 
+
+function deleteReceiptPhoto(ctx) {
+  if(ctx==='add') {
+    currentPhoto = null;
+    const wrap = document.getElementById('photoPreviewWrap');
+    if(wrap) wrap.classList.remove('visible');
+    document.getElementById('photoInput').value='';
+    document.getElementById('pzIcon').textContent='📷';
+    document.getElementById('pzText').textContent='Tap to take a photo or upload';
+    uploadStatusReset();
+  } else {
+    editPhoto = null;
+    const wrap = document.getElementById('editPhotoPreviewWrap');
+    if(wrap) wrap.classList.remove('visible');
+    document.getElementById('editPhotoInput').value='';
+    document.getElementById('editPzIcon').textContent='📷';
+    document.getElementById('editPzText').textContent='Tap to replace photo';
+    uploadStatusReset('edit');
+  }
+}
+
 function handlePhoto(e){
   const file=e.target.files[0]; if(!file) return;
 
@@ -3154,7 +3221,9 @@ function handlePhoto(e){
   reader.onload=async ev=>{
     currentPhoto=ev.target.result;
     const prev=document.getElementById('photoPreview');
-    prev.src=currentPhoto; prev.style.display='block';
+    prev.src=currentPhoto;
+    const wrap=document.getElementById('photoPreviewWrap');
+    if(wrap) wrap.classList.add('visible');
     document.getElementById('pzText').textContent='Uploading to R2…';
 
     const t = currentTrip();
@@ -3241,20 +3310,39 @@ function renderSharesGrid(ns) {
 
   grid.innerHTML = '';
   people.forEach(p => {
+    // Default: even split. Percentage = whole numbers only.
     const defaultVal = type==='percentage'
-      ? dsRound(100/people.length)
+      ? Math.round(100/people.length)
       : total>0 ? dsRound(total/people.length) : 0;
-    const val = existing[p] !== undefined ? existing[p] : defaultVal;
+    const rawVal = existing[p] !== undefined ? existing[p] : defaultVal;
+    const val = type==='percentage' ? Math.round(rawVal) : rawVal;
     const row = document.createElement('div');
     row.className='share-row'; row.dataset.person=p;
-    row.innerHTML = `
-      <div class="share-row-name">
-        <div style="width:20px;height:20px;border-radius:50%;background:${pColor(p,currentTrip().people)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff">${initials(p)}</div>
-        <span>${esc(p)}</span>
-      </div>
-      <input type="number" value="${val}" min="0" step="${type==='percentage'?'0.01':'0.01'}" oninput="updateShareTotal('${ns}')">
-      <span class="share-row-suffix">${type==='percentage'?'%':''}</span>
-      <span class="share-row-calc" id="shareCalc_${ns}_${p.replace(/\s+/g,'_')}"></span>`;
+
+    if(type==='percentage') {
+      // Slider for percentage — whole numbers only
+      row.innerHTML = `
+        <div class="share-row-name">
+          <div style="width:20px;height:20px;border-radius:50%;background:${pColor(p,currentTrip().people)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff">${initials(p)}</div>
+          <span>${esc(p)}</span>
+        </div>
+        <div class="share-row-slider">
+          <input type="range" class="share-slider" min="0" max="100" step="1" value="${val}"
+            oninput="this.nextElementSibling.textContent=this.value+'%';updateShareTotal('${ns}')">
+          <span class="share-pct-value">${val}%</span>
+        </div>
+        <span class="share-row-calc" id="shareCalc_${ns}_${p.replace(/\s+/g,'_')}"></span>`;
+    } else {
+      // Number input for custom amount — default to even split
+      row.innerHTML = `
+        <div class="share-row-name">
+          <div style="width:20px;height:20px;border-radius:50%;background:${pColor(p,currentTrip().people)};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff">${initials(p)}</div>
+          <span>${esc(p)}</span>
+        </div>
+        <input type="number" value="${val}" min="0" step="0.01" oninput="updateShareTotal('${ns}')">
+        <span class="share-row-suffix"></span>
+        <span class="share-row-calc" id="shareCalc_${ns}_${p.replace(/\s+/g,'_')}"></span>`;
+    }
     grid.appendChild(row);
   });
   updateShareTotal(ns);
@@ -3269,9 +3357,12 @@ function updateShareTotal(ns) {
   const totEl  = document.getElementById(totId);
   let sum = 0;
   grid.querySelectorAll('.share-row').forEach(row => {
-    const inp = row.querySelector('input');
+    // For percentage: read from range slider; for amount: read from number input
+    const inp = type==='percentage'
+      ? row.querySelector('input[type="range"]')
+      : row.querySelector('input[type="number"]');
     const val = parseFloat(inp?.value)||0;
-    sum = dsRound(sum + val);
+    sum = type==='percentage' ? sum + Math.round(val) : dsRound(sum + val);
     const calcEl = document.getElementById('shareCalc_'+ns+'_'+row.dataset.person?.replace(/\s+/g,'_'));
     if(calcEl && type==='percentage' && total>0)
       calcEl.textContent = fmt(dsRound(total * val / 100));
@@ -3290,11 +3381,15 @@ function updateShareTotal(ns) {
 }
 
 function getSharesFromGrid(ns) {
+  const type   = _splitState[ns];
   const gridId = ns==='ed' ? 'edSharesGrid' : 'eSharesGrid';
   const shares = {};
   document.getElementById(gridId).querySelectorAll('.share-row').forEach(row=>{
-    const inp = row.querySelector('input');
-    shares[row.dataset.person] = parseFloat(inp?.value)||0;
+    const inp = type==='percentage'
+      ? row.querySelector('input[type="range"]')
+      : row.querySelector('input[type="number"]');
+    const val = parseFloat(inp?.value)||0;
+    shares[row.dataset.person] = type==='percentage' ? Math.round(val) : val;
   });
   return shares;
 }
@@ -3306,8 +3401,8 @@ function validateShares(ns, total) {
   if (type==='even') return true;
   const shares = getSharesFromGrid(ns);
   const sum    = dsRound(Object.values(shares).reduce((a,b)=>a+b,0));
-  if (type==='percentage' && Math.abs(sum-100)>0.01) {
-    alert(`Percentages must add up to 100% (currently ${sum.toFixed(2)}%).`); return false;
+  if (type==='percentage' && Math.abs(sum-100)>0) {
+    alert(`Percentages must add up to 100% (currently ${sum}%).`); return false;
   }
   if (type==='amount' && Math.abs(sum-total)>0.02) {
     alert(`Custom amounts must add up to ${fmt(total)} (currently ${fmt(sum)}).`); return false;
