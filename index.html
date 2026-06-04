@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kitty — Split the Pot</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>💰</text></svg>">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -1364,7 +1365,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '5a2e0d5';
+const REV = 'ef4005d';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -2384,10 +2385,13 @@ function showEditExpenseModal(id) {
   document.getElementById('editDate').value=exp.date||'';
   document.getElementById('editPhotoInput').value='';
   if(exp.photo){
-    document.getElementById('editPhotoPreview').src=exp.photo;
+    const isR2 = exp.photo && !exp.photo.startsWith('data:');
+    document.getElementById('editPhotoPreview').src = photoUrl(exp.photo);
     document.getElementById('editPhotoPreview').style.display='block';
     document.getElementById('editPzIcon').textContent='✅';
-    document.getElementById('editPzText').textContent='Photo attached — tap to replace';
+    document.getElementById('editPzText').textContent = isR2
+      ? 'Photo in R2 — tap to replace'
+      : 'Photo attached — tap to replace';
   } else {
     document.getElementById('editPhotoPreview').style.display='none';
     document.getElementById('editPzIcon').textContent='📷';
@@ -2433,7 +2437,7 @@ function handleEditPhoto(e){
   const reader=new FileReader();
   reader.onload=async ev=>{
     editPhoto=ev.target.result;
-    document.getElementById('editPhotoPreview').src=editPhoto;
+    document.getElementById('editPhotoPreview').src=editPhoto.startsWith('data:')?editPhoto:photoUrl(editPhoto);
     document.getElementById('editPhotoPreview').style.display='block';
     document.getElementById('editPzText').textContent='Uploading to R2…';
 

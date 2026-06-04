@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 7999fbe
+//  Kitty API Worker  rev: 5a2e0d5
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '7999fbe';
+const REV = '5a2e0d5';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -283,7 +283,9 @@ export default {
             const placeholders = tripIds.map(()=>'?').join(',');
             const { results } = await env.DB.prepare(
               `SELECT id, name, start_date, end_date, icon, code, cover_photo,
-                (SELECT COUNT(*) FROM expenses WHERE trip_id=t.id) as expense_count
+                (SELECT COUNT(*) FROM expenses WHERE trip_id=t.id) as expense_count,
+                (SELECT COUNT(*) FROM people WHERE trip_id=t.id) as people_count,
+                (SELECT COALESCE(SUM(amount),0) FROM expenses WHERE trip_id=t.id) as total_amount
                FROM trips t WHERE id IN (${placeholders}) ORDER BY created_at DESC`
             ).bind(...tripIds).all();
             trips = results;
@@ -356,7 +358,9 @@ export default {
           const placeholders = tripIds.map(()=>'?').join(',');
           const { results } = await env.DB.prepare(
             `SELECT id, name, start_date, end_date, icon, code, cover_photo,
-              (SELECT COUNT(*) FROM expenses WHERE trip_id=t.id) as expense_count
+              (SELECT COUNT(*) FROM expenses WHERE trip_id=t.id) as expense_count,
+              (SELECT COUNT(*) FROM people WHERE trip_id=t.id) as people_count,
+              (SELECT COALESCE(SUM(amount),0) FROM expenses WHERE trip_id=t.id) as total_amount
              FROM trips t WHERE id IN (${placeholders}) ORDER BY created_at DESC`
           ).bind(...tripIds).all();
           return respond(results);
