@@ -1408,7 +1408,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '1d8e793';
+const REV = '0168058';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1467,27 +1467,28 @@ function uploadStatusReset(pfx='') {
   if(!panel) return;
   panel.classList.remove('visible');
   const pre = pfx ? pfx+'-us-' : 'us-';
-  ['sign','put','save'].forEach(s=>{
-    const row = document.getElementById(pre+s);
-    if(row) { row.className='upload-status-row pending'; row.querySelector('.us-icon').textContent='○'; }
-    const det = document.getElementById(pre+s+'-detail');
+  ['sign','put','save'].forEach(step=>{
+    const row = document.getElementById(pre+step);
+    if(row) { row.className='upload-status-row pending'; const ic=row.querySelector('.us-icon'); if(ic) ic.textContent='○'; }
+    const det = document.getElementById(pre+step+'-detail');
     if(det) { det.textContent=''; det.className='us-detail'; }
   });
 }
 
-function uploadStatusStep(stepId, state, detail='', pfx='') {
+function uploadStatusStep(stepId, stepState, detail='', pfx='') {
   const panelId = pfx ? pfx+'UploadStatus' : 'uploadStatus';
   const panel = document.getElementById(panelId);
   if(panel) panel.classList.add('visible');
   const row = document.getElementById(stepId);
-  if(!row) return;
+  if(!row) { console.warn('uploadStatusStep: row not found:', stepId); return; }
   const icons = { running:'⟳', ok:'✓', err:'✗', pending:'○' };
-  row.className = 'upload-status-row ' + state;
-  row.querySelector('.us-icon').textContent = icons[state]||'○';
+  row.className = 'upload-status-row ' + stepState;
+  const iconEl = row.querySelector('.us-icon');
+  if(iconEl) iconEl.textContent = icons[stepState]||'○';
   const det = document.getElementById(stepId+'-detail');
   if(det) {
     det.textContent = detail;
-    det.className = 'us-detail' + (state==='err'?' err':'');
+    det.className = 'us-detail' + (stepState==='err'?' err':'');
   }
 }
 
@@ -1565,7 +1566,20 @@ async function uploadPhotoToR2(dataUrl, tripId) {
 
 // Call this after the expense is saved to D1 to confirm step 3
 function uploadStatusSaveDone(ok, detail='') {
-  uploadStatusStep('us-save', ok?'ok':'err', detail);
+  // Directly update the row to avoid any parameter shadowing issues
+  const panel = document.getElementById('uploadStatus');
+  if(panel) panel.classList.add('visible');
+  const row = document.getElementById('us-save');
+  if(row) {
+    row.className = 'upload-status-row ' + (ok ? 'ok' : 'err');
+    const ic = row.querySelector('.us-icon');
+    if(ic) ic.textContent = ok ? '✓' : '✗';
+  }
+  const det = document.getElementById('us-save-detail');
+  if(det) {
+    det.textContent = detail;
+    det.className = 'us-detail' + (ok ? '' : ' err');
+  }
 }
 
 function photoUrl(keyOrData) {
