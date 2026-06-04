@@ -1347,7 +1347,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'be0f5db';
+const REV = 'c1f572a';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -3174,15 +3174,18 @@ async function saveExpense(){
   const exp={id:uid(),desc,amount,paidBy,date,note,category,splitBetween,splitType,shares,photo:currentPhoto,paidSettlements:{}};
   t.expenses.push(exp);
   logHistory(t,'added', getWho(t.id)||paidBy, desc, amount);
-  closeModal('modalExpense'); renderAll();
-  await save(async()=>{
-    // Photo was already uploaded to R2 on file select.
-    // currentPhoto is either an R2 key (no 'data:' prefix) or base64 fallback.
-    const isR2Key = currentPhoto && !currentPhoto.startsWith('data:');
-    const photoKey = isR2Key ? currentPhoto : null;
-    const photoB64 = isR2Key ? null : (currentPhoto||null);
-    if(isR2Key) exp.photo = photoKey;
 
+  // Determine photo key now — before closing modal
+  const isR2Key = currentPhoto && !currentPhoto.startsWith('data:');
+  const photoKey = isR2Key ? currentPhoto : null;
+  const photoB64 = isR2Key ? null : (currentPhoto||null);
+  if(isR2Key) exp.photo = photoKey;
+
+  // Disable save button to prevent double-submit
+  const saveBtn = document.querySelector('#modalExpense .btn-primary');
+  if(saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+  try {
     await api('POST','/expenses',{
       id:exp.id, tripId:t.id, desc, amount, paidBy, date, note, category,
       splitBetween, splitType:exp.splitType, shares:exp.shares,
@@ -3191,8 +3194,21 @@ async function saveExpense(){
       paidSettlements:{}
     });
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
-    uploadStatusSaveDone(true, 'expense saved');
-  });
+    uploadStatusSaveDone(true, 'saved ✓');
+    lsSave();
+    // Close modal only after successful save
+    closeModal('modalExpense');
+    renderAll();
+  } catch(e) {
+    uploadStatusSaveDone(false, e.message);
+    setSyncDot('err');
+    toast('Save failed: '+e.message, 'error', 5000);
+    // Re-enable button so user can retry
+    if(saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Add Expense'; }
+    // Remove the optimistically-added expense on failure
+    t.expenses = t.expenses.filter(ex=>ex.id!==exp.id);
+    t.history  = t.history.filter(h=>h!==t.history[t.history.length-1]);
+  }
 }
 
 function openLightbox(e,src){ e.stopPropagation(); document.getElementById('lightboxImg').src=src; document.getElementById('lightbox').classList.remove('hidden'); }
