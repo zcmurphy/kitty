@@ -1347,7 +1347,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'd294a8b';
+const REV = 'be0f5db';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1436,7 +1436,6 @@ async function uploadPhotoToR2(dataUrl, tripId) {
   const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
   const binary = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
 
-  uploadStatusReset();
   setSyncDot('syncing');
 
   // ── Step 1: get presigned URL ─────────────────────────────
@@ -2978,33 +2977,41 @@ function splitNone(ns){ const p=ns==='ed'?'editSplit':'eSplit'; document.querySe
 
 function handlePhoto(e){
   const file=e.target.files[0]; if(!file) return;
+
+  // Show status panel immediately — before file is even read
+  uploadStatusReset();
+  const panel = document.getElementById('uploadStatus');
+  if(panel) panel.classList.add('visible');
+  document.getElementById('pzIcon').textContent='⏫';
+  document.getElementById('pzText').textContent='Reading file…';
+
   const reader=new FileReader();
   reader.onload=async ev=>{
     currentPhoto=ev.target.result;
     const prev=document.getElementById('photoPreview');
     prev.src=currentPhoto; prev.style.display='block';
-    document.getElementById('pzIcon').textContent='⏫';
-    document.getElementById('pzText').textContent='Uploading…';
+    document.getElementById('pzText').textContent='Uploading to R2…';
 
-    // Upload immediately on selection — gives instant feedback
     const t = currentTrip();
     if(t) {
       const key = await uploadPhotoToR2(currentPhoto, t.id);
       if(key) {
-        currentPhoto = key;  // store R2 key instead of base64
+        currentPhoto = key;
         document.getElementById('pzIcon').textContent='✅';
-        document.getElementById('pzText').textContent='Photo uploaded to R2';
-        uploadStatusSaveDone(true, 'ready to save with expense');
+        document.getElementById('pzText').textContent='Uploaded — ready to save';
       } else {
-        // R2 failed — staying as base64 fallback
         document.getElementById('pzIcon').textContent='⚠️';
         document.getElementById('pzText').textContent='Stored locally (R2 unavailable)';
       }
     } else {
-      // No trip context yet — just store base64, upload on save
       document.getElementById('pzIcon').textContent='✅';
       document.getElementById('pzText').textContent='Photo attached';
     }
+  };
+  reader.onerror = () => {
+    uploadStatusStep('us-sign', 'err', 'Could not read file');
+    document.getElementById('pzIcon').textContent='❌';
+    document.getElementById('pzText').textContent='File read failed';
   };
   reader.readAsDataURL(file);
 }
