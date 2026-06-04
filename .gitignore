@@ -1,6 +1,8 @@
 backup
 config
+admin
 revs
 .wrangler
 wrangler.tomls
 *.toml
+tokens

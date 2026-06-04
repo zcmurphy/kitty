@@ -1307,7 +1307,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'ef0230e';
+const REV = '8e131d3';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1358,32 +1358,52 @@ async function api(method, path, body, tripId) {
   }
 }
 
-// Upload a photo (base64 dataURL) to R2, return the key
+// Upload a photo (base64 dataURL) to R2 via presigned URL, return the key
 async function uploadPhotoToR2(dataUrl, tripId) {
   if(!dataUrl || !dataUrl.startsWith('data:')) return null;
   const [header, b64] = dataUrl.split(',');
-  const ct = header.match(/data:(.*?);/)?.[1] || 'image/jpeg';
+  const ct  = header.match(/data:(.*?);/)?.[1] || 'image/jpeg';
+  const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
   const binary = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
   setSyncDot('syncing');
   try {
-    const token = getToken(tripId);
-    const r = await fetch(API+'/photos?tripId='+tripId, {
+    // Step 1: get presigned URL from Worker
+    const signRes = await fetch(
+      API+'/photos/sign?tripId='+encodeURIComponent(tripId)+'&ext='+ext, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': ct, 'X-Invite-Token': token },
+      headers: { 'Content-Type': 'application/json', 'X-Invite-Token': getToken(tripId) },
+    });
+    if(!signRes.ok) {
+      const e = await signRes.json().catch(()=>({error:signRes.statusText}));
+      // R2 creds not set up — fall back to base64
+      if(signRes.status===503) {
+        console.warn('R2 presign unavailable, using base64 fallback:', e.error);
+        return null; // caller will use base64
+      }
+      throw new Error(e.error || 'Could not get upload URL');
+    }
+    const { key, url: presignedUrl } = await signRes.json();
+
+    // Step 2: PUT directly to R2 (no auth header — presigned URL has it baked in)
+    const uploadRes = await fetch(presignedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': ct },
       body: binary,
     });
-    if(!r.ok) {
-      const errBody = await r.json().catch(()=>({error:r.statusText}));
-      throw new Error(errBody.error || 'Photo upload failed ('+r.status+')');
+    if(!uploadRes.ok) {
+      const txt = await uploadRes.text().catch(()=>'');
+      throw new Error('R2 upload failed ('+uploadRes.status+'): '+txt.slice(0,200));
     }
-    const { key } = await r.json();
+
     setSyncDot('ok');
-    return key; // store key in D1, not the raw base64
+    toast('Photo uploaded', 'success', 1500);
+    return key;
   } catch(e) {
     setSyncDot('err');
-    toast('Photo upload failed: '+e.message, 'error');
-    return null;
+    toast('Photo upload failed: '+e.message, 'error', 4000);
+    console.error('uploadPhotoToR2:', e);
+    return null; // fall back to base64
   }
 }
 

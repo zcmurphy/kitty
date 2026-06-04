@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: ef0230e
+//  Kitty API Worker  rev: 8e131d3
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = 'ef0230e';
+const REV = '8e131d3';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -140,6 +140,91 @@ async function uploadPhoto(env, key, body, ct) {
 async function deletePhoto(env, key) {
   if (key && env.R2) await env.R2.delete(key).catch(()=>{});
 }
+// ── AWS SigV4 helpers for R2 presigned URLs ───────────────────
+// R2 is S3-compatible: endpoint is https://<accountId>.r2.cloudflarestorage.com
+async function hmacSHA256(key, data) {
+  const k = typeof key === 'string'
+    ? new TextEncoder().encode(key)
+    : key;
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', k, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  return new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey,
+    typeof data === 'string' ? new TextEncoder().encode(data) : data));
+}
+
+async function sha256Hex(data) {
+  const buf = await crypto.subtle.digest('SHA-256',
+    typeof data === 'string' ? new TextEncoder().encode(data) : data);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+function toHex(buf) {
+  return Array.from(buf).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function getSigningKey(secret, date, region, service) {
+  const kDate    = await hmacSHA256('AWS4' + secret, date);
+  const kRegion  = await hmacSHA256(kDate,  region);
+  const kService = await hmacSHA256(kRegion, service);
+  return        await hmacSHA256(kService, 'aws4_request');
+}
+
+async function createPresignedUrl(env, key, expiresIn = 300) {
+  const accountId  = env.R2_ACCOUNT_ID;
+  const accessKey  = env.R2_ACCESS_KEY_ID;
+  const secretKey  = env.R2_SECRET_ACCESS_KEY;
+  const bucket     = 'kitty-assets';
+  const region     = 'auto';
+  const service    = 's3';
+
+  if (!accountId || !accessKey || !secretKey) {
+    throw new Error('R2 credentials not configured. Run: npx wrangler secret put R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY');
+  }
+
+  const host     = `${accountId}.r2.cloudflarestorage.com`;
+  const endpoint = `https://${host}/${bucket}/${key}`;
+  const now      = new Date();
+  const amzDate  = now.toISOString().replace(/[:\-]|\.\d{3}/g,'').slice(0,15)+'Z';
+  const dateStamp = amzDate.slice(0,8);
+
+  const credentialScope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const credential      = `${accessKey}/${credentialScope}`;
+
+  const params = new URLSearchParams({
+    'X-Amz-Algorithm':     'AWS4-HMAC-SHA256',
+    'X-Amz-Credential':    credential,
+    'X-Amz-Date':          amzDate,
+    'X-Amz-Expires':       String(expiresIn),
+    'X-Amz-SignedHeaders': 'host',
+  });
+  // Sort params for canonical query string
+  const sortedParams = new URLSearchParams([...params.entries()].sort());
+
+  const canonicalRequest = [
+    'PUT',
+    '/' + bucket + '/' + key,
+    sortedParams.toString(),
+    'host:' + host + '\n',
+    'host',
+    'UNSIGNED-PAYLOAD',
+  ].join('\n');
+
+  const stringToSign = [
+    'AWS4-HMAC-SHA256',
+    amzDate,
+    credentialScope,
+    await sha256Hex(canonicalRequest),
+  ].join('\n');
+
+  const signingKey = await getSigningKey(secretKey, dateStamp, region, service);
+  const signature  = toHex(await hmacSHA256(signingKey, stringToSign));
+
+  sortedParams.set('X-Amz-Signature', signature);
+  return `https://${host}/${bucket}/${key}?${sortedParams.toString()}`;
+}
+
+
 
 // ── Route parser ─────────────────────────────────────────────
 function parseRoute(url) {
@@ -444,27 +529,45 @@ export default {
 
       // ── PHOTOS ─────────────────────────────────────────────
       if (resource === 'photos') {
+
+        // POST /api/photos/sign?tripId=xxx&ext=jpg — get a presigned upload URL
+        if (method === 'POST' && id === 'sign') {
+          const tripId = url.searchParams.get('tripId');
+          const ext    = (url.searchParams.get('ext') || 'jpg').replace(/[^a-z0-9]/gi,'');
+          const authed = await validateAccess(req, env, tripId, sess);
+          if (!authed) return respond({ error: 'Unauthorized' }, 401);
+          const key = `photos/${tripId}/${crypto.randomUUID()}.${ext}`;
+          try {
+            const presignedUrl = await createPresignedUrl(env, key, 300);
+            return respond({ key, url: presignedUrl });
+          } catch(e) {
+            console.error('Presign error:', e.message);
+            return respond({ error: e.message }, 503);
+          }
+        }
+
+        // POST /api/photos?tripId=xxx — direct upload via Worker (fallback if no S3 creds)
         if (method === 'POST') {
           const tripId = url.searchParams.get('tripId');
           const authed = await validateAccess(req, env, tripId, sess);
           if (!authed) return respond({ error: 'Unauthorized' }, 401);
-          if (!env.R2) return respond({ error: 'R2 not configured — set up kitty-assets bucket' }, 503);
+          if (!env.R2) return respond({ error: 'R2 not configured' }, 503);
           const ct  = req.headers.get('Content-Type') || 'image/jpeg';
           const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
           const key = `photos/${tripId}/${crypto.randomUUID()}.${ext}`;
           try {
             await uploadPhoto(env, key, req.body, ct);
           } catch(e) {
-            console.error('R2 upload error:', e);
             return respond({ error: 'Upload failed: ' + e.message }, 500);
           }
           return respond({ key, url: `${url.origin}/api/photos/${key}` });
         }
+
+        // GET /api/photos/<key> — serve photo from R2 (key may have slashes)
         if (method === 'GET') {
           if (!env.R2) return respond({ error: 'R2 not configured' }, 503);
-          // Key is everything after /api/photos/ — may contain slashes
           const key = url.pathname.replace(/^\/api\/photos\//, '');
-          if (!key) return respond({ error: 'No key specified' }, 400);
+          if (!key) return respond({ error: 'No key' }, 400);
           const obj = await env.R2.get(key);
           if (!obj) return respond({ error: 'Not found' }, 404);
           return new Response(obj.body, {
@@ -475,11 +578,14 @@ export default {
             },
           });
         }
-        if (method === 'DELETE' && id) {
+
+        // DELETE /api/photos/<key>?tripId=xxx
+        if (method === 'DELETE') {
           const tripId = url.searchParams.get('tripId');
           const authed = await validateAccess(req, env, tripId, sess);
           if (!authed) return respond({ error: 'Unauthorized' }, 401);
-          await deletePhoto(env, url.pathname.replace('/api/photos/', ''));
+          const key = url.pathname.replace(/^\/api\/photos\//, '');
+          await deletePhoto(env, key);
           return respond({ ok: true });
         }
       }
