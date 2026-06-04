@@ -1208,6 +1208,23 @@
           <div class="pz-text" id="editPzText">Tap to replace photo</div>
         </div>
         <img class="photo-preview" id="editPhotoPreview" alt="Receipt preview">
+        <div class="upload-status" id="editUploadStatus">
+          <div class="upload-status-row pending" id="edit-us-sign">
+            <span class="us-icon">○</span>
+            <span class="us-label">Request presigned URL</span>
+            <span class="us-detail" id="edit-us-sign-detail"></span>
+          </div>
+          <div class="upload-status-row pending" id="edit-us-put">
+            <span class="us-icon">○</span>
+            <span class="us-label">Upload to R2</span>
+            <span class="us-detail" id="edit-us-put-detail"></span>
+          </div>
+          <div class="upload-status-row pending" id="edit-us-save">
+            <span class="us-icon">○</span>
+            <span class="us-label">Save key to database</span>
+            <span class="us-detail" id="edit-us-save-detail"></span>
+          </div>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1347,7 +1364,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'c1f572a';
+const REV = '5e872e3';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1400,22 +1417,23 @@ async function api(method, path, body, tripId) {
 
 // Upload a photo (base64 dataURL) to R2 via presigned URL, return the key
 
-function uploadStatusReset() {
-  const panel = document.getElementById('uploadStatus');
+function uploadStatusReset(pfx='') {
+  const panelId = pfx ? pfx+'UploadStatus' : 'uploadStatus';
+  const panel = document.getElementById(panelId);
   if(!panel) return;
   panel.classList.remove('visible');
-  ['us-sign','us-put','us-save'].forEach(id=>{
-    const row = document.getElementById(id);
+  const pre = pfx ? pfx+'-us-' : 'us-';
+  ['sign','put','save'].forEach(s=>{
+    const row = document.getElementById(pre+s);
     if(row) { row.className='upload-status-row pending'; row.querySelector('.us-icon').textContent='○'; }
-  });
-  ['us-sign-detail','us-put-detail','us-save-detail'].forEach(id=>{
-    const el = document.getElementById(id);
-    if(el) { el.textContent=''; el.className='us-detail'; }
+    const det = document.getElementById(pre+s+'-detail');
+    if(det) { det.textContent=''; det.className='us-detail'; }
   });
 }
 
-function uploadStatusStep(stepId, state, detail='') {
-  const panel = document.getElementById('uploadStatus');
+function uploadStatusStep(stepId, state, detail='', pfx='') {
+  const panelId = pfx ? pfx+'UploadStatus' : 'uploadStatus';
+  const panel = document.getElementById(panelId);
   if(panel) panel.classList.add('visible');
   const row = document.getElementById(stepId);
   if(!row) return;
@@ -1957,9 +1975,18 @@ function showExpenseDetail(id) {
   // Photo
   if(exp.photo){
     const img=document.createElement('img'); img.className='detail-photo'; img.alt='Receipt';
+    // Show load status
+    const photoStatus = document.createElement('div');
+    photoStatus.style.cssText='font-size:11px;font-family:"Roboto Mono",monospace;padding:5px 0;color:var(--ink-3)';
+    photoStatus.textContent='⟳ Loading photo…';
+    img.onload  = ()=>{ photoStatus.textContent='✓ Photo loaded from R2'; photoStatus.style.color='var(--green)'; };
+    img.onerror = ()=>{ photoStatus.textContent='✗ Photo failed to load — '+photoUrl(exp.photo).slice(0,60); photoStatus.style.color='var(--red)'; };
+    const isR2 = exp.photo && !exp.photo.startsWith('data:');
+    if(!isR2) { photoStatus.textContent='⚠ Stored as local base64 (not in R2)'; photoStatus.style.color='var(--amber)'; }
     img.src = photoUrl(exp.photo);
     img.addEventListener('click', e=>openLightbox(e,photoUrl(exp.photo)));
     body.appendChild(img);
+    if(isR2) body.appendChild(photoStatus);
   }
 
   // Per-person settlement section (exclude the payer — they already paid)
@@ -2348,6 +2375,7 @@ function showEditExpenseModal(id) {
   document.querySelectorAll('#modalEditExpense .split-type-tab').forEach(tab=>{
     tab.classList.toggle('active', tab.dataset.split===_st);
   });
+  uploadStatusReset('edit');
   openModal('modalEditExpense');
   bindAmountListener('ed');
   setTimeout(()=>renderSharesGrid('ed'),80);
@@ -2359,15 +2387,93 @@ function selEditCat(el){ document.querySelectorAll('#editCatGrid .cat-chip').for
 
 function handleEditPhoto(e){
   const file=e.target.files[0]; if(!file) return;
+
+  uploadStatusReset('edit');
+  const panel = document.getElementById('editUploadStatus');
+  if(panel) panel.classList.add('visible');
+  document.getElementById('editPzIcon').textContent='⏫';
+  document.getElementById('editPzText').textContent='Reading file…';
+
   const reader=new FileReader();
-  reader.onload=ev=>{
+  reader.onload=async ev=>{
     editPhoto=ev.target.result;
     document.getElementById('editPhotoPreview').src=editPhoto;
     document.getElementById('editPhotoPreview').style.display='block';
-    document.getElementById('editPzIcon').textContent='✅';
-    document.getElementById('editPzText').textContent='Photo attached';
+    document.getElementById('editPzText').textContent='Uploading to R2…';
+
+    const t=currentTrip();
+    if(t){
+      // Use edit-prefixed step IDs
+      const origStep = window._uploadStatusStep || uploadStatusStep;
+      const key = await uploadPhotoToR2EditModal(editPhoto, t.id);
+      if(key){
+        editPhoto=key;
+        document.getElementById('editPzIcon').textContent='✅';
+        document.getElementById('editPzText').textContent='Uploaded — ready to save';
+      } else {
+        document.getElementById('editPzIcon').textContent='⚠️';
+        document.getElementById('editPzText').textContent='Stored locally (R2 unavailable)';
+      }
+    } else {
+      document.getElementById('editPzIcon').textContent='✅';
+      document.getElementById('editPzText').textContent='Photo attached';
+    }
   };
   reader.readAsDataURL(file);
+}
+
+// Same as uploadPhotoToR2 but uses edit- prefixed status IDs
+async function uploadPhotoToR2EditModal(dataUrl, tripId) {
+  if(!dataUrl || !dataUrl.startsWith('data:')) return null;
+  const [header, b64] = dataUrl.split(',');
+  const ct  = header.match(/data:(.*?);/)?.[1] || 'image/jpeg';
+  const ext = ct.split('/')[1]?.split(';')[0] || 'jpg';
+  const binary = Uint8Array.from(atob(b64), c=>c.charCodeAt(0));
+  setSyncDot('syncing');
+
+  uploadStatusStep('edit-us-sign','running','calling '+API+'/photos/sign','edit');
+  let key, presignedUrl;
+  try {
+    const signRes = await fetch(
+      API+'/photos/sign?tripId='+encodeURIComponent(tripId)+'&ext='+ext, {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json','X-Invite-Token':getToken(tripId)},
+    });
+    const signBody = await signRes.json().catch(()=>({error:signRes.statusText}));
+    if(!signRes.ok){
+      uploadStatusStep('edit-us-sign','err',signBody.error||'HTTP '+signRes.status,'edit');
+      if(signRes.status===503){ toast('R2 not configured','',3000); return null; }
+      setSyncDot('err');
+      toast('Presign failed: '+(signBody.error||signRes.status),'error',4000);
+      return null;
+    }
+    key=signBody.key; presignedUrl=signBody.url;
+    uploadStatusStep('edit-us-sign','ok',key,'edit');
+  } catch(e){
+    uploadStatusStep('edit-us-sign','err',e.message,'edit');
+    setSyncDot('err'); return null;
+  }
+
+  uploadStatusStep('edit-us-put','running',Math.round(binary.length/1024)+'KB → R2','edit');
+  try {
+    const uploadRes = await fetch(presignedUrl,{
+      method:'PUT', headers:{'Content-Type':ct}, body:binary,
+    });
+    if(!uploadRes.ok){
+      const txt = await uploadRes.text().catch(()=>'');
+      uploadStatusStep('edit-us-put','err','HTTP '+uploadRes.status+': '+txt.slice(0,80),'edit');
+      setSyncDot('err'); return null;
+    }
+    uploadStatusStep('edit-us-put','ok','uploaded '+Math.round(binary.length/1024)+'KB','edit');
+  } catch(e){
+    uploadStatusStep('edit-us-put','err',e.message,'edit');
+    setSyncDot('err'); return null;
+  }
+
+  uploadStatusStep('edit-us-save','running','saving key…','edit');
+  setSyncDot('ok');
+  toast('Photo uploaded ✓','success',1800);
+  return key;
 }
 
 async function saveEditExpense(){
@@ -2400,12 +2506,31 @@ async function saveEditExpense(){
   exp.note=note; exp.category=category; exp.splitBetween=splitBetween;
   exp.splitType=splitType; exp.shares=shares; exp.photo=editPhoto;
   logHistory(t,'edited',who,desc,amount,changes.length?changes.join(', '):null);
-  closeModal('modalEditExpense'); renderAll();
-  await save(async()=>{
-    await api('PUT','/expenses/'+editingExpenseId,{desc,amount,paidBy,date,note,category,splitBetween,splitType,shares,photoKey:typeof editPhoto==='string'&&!editPhoto.startsWith('data:')?editPhoto:null,photo:editPhoto,paidSettlements:exp.paidSettlements||{}});
+
+  const isR2Edit = typeof editPhoto==='string' && editPhoto.length>0 && !editPhoto.startsWith('data:');
+  const editPhotoKey = isR2Edit ? editPhoto : null;
+  const editPhotoB64 = isR2Edit ? null : (editPhoto||null);
+
+  const editSaveBtn = document.querySelector('#modalEditExpense .btn-primary');
+  if(editSaveBtn){ editSaveBtn.disabled=true; editSaveBtn.textContent='Saving…'; }
+
+  try {
+    await api('PUT','/expenses/'+editingExpenseId,{
+      desc, amount, paidBy, date, note, category, splitBetween, splitType, shares,
+      photoKey: editPhotoKey,
+      photo: editPhotoB64,
+      paidSettlements: exp.paidSettlements||{}
+    });
     await api('POST','/history',{tripId:t.id,...t.history[t.history.length-1]});
-    uploadStatusSaveDone(true, 'expense saved');
-  });
+    uploadStatusStep('edit-us-save','ok','saved ✓','edit');
+    lsSave();
+    closeModal('modalEditExpense'); renderAll();
+  } catch(e) {
+    uploadStatusStep('edit-us-save','err',e.message,'edit');
+    setSyncDot('err');
+    toast('Save failed: '+e.message,'error',5000);
+    if(editSaveBtn){ editSaveBtn.disabled=false; editSaveBtn.textContent='Save Changes'; }
+  }
 }
 
 function delExp(id) {
