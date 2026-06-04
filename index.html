@@ -1408,7 +1408,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '0168058';
+const REV = '2a2fb41';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1940,7 +1940,7 @@ function renderAll() {
   const iconEl=document.getElementById('tripTitleIcon');
   if(iconEl) iconEl.textContent=t.icon||'';
   const coverEl=document.getElementById('tripCoverPhoto');
-  if(coverEl){ if(t.coverPhoto){ coverEl.src=t.coverPhoto; coverEl.style.display='block'; } else { coverEl.style.display='none'; } }
+  if(coverEl){ if(t.coverPhoto){ coverEl.src=photoUrl(t.coverPhoto)||t.coverPhoto; coverEl.style.display='block'; } else { coverEl.style.display='none'; } }
   renderProgress(); renderExpenses(); renderBalances(); renderSettlements(); renderHistory();
   renderWhoSelector();
 }
@@ -2178,7 +2178,7 @@ function showTripSettings() {
 
   // Cover photo preview
   if (t.coverPhoto) {
-    document.getElementById('coverPreviewImg').src = t.coverPhoto;
+    document.getElementById('coverPreviewImg').src = photoUrl(t.coverPhoto)||t.coverPhoto;
     document.getElementById('coverPreviewWrap').style.display = 'block';
     document.getElementById('coverUploadZone').style.display = 'none';
   } else {
@@ -2205,14 +2205,34 @@ function selectTripIcon(el) {
   el.classList.add('selected');
 }
 
-function handleCoverPhoto(e) {
+async function handleCoverPhoto(e) {
   const file = e.target.files[0]; if(!file) return;
   const reader = new FileReader();
-  reader.onload = ev => {
-    settingsCoverPhoto = ev.target.result;
-    document.getElementById('coverPreviewImg').src = settingsCoverPhoto;
+  reader.onload = async ev => {
+    const dataUrl = ev.target.result;
+    // Show preview immediately with base64
+    document.getElementById('coverPreviewImg').src = dataUrl;
     document.getElementById('coverPreviewWrap').style.display = 'block';
     document.getElementById('coverUploadZone').style.display = 'none';
+    document.getElementById('coverUploadZone').querySelector('.pz-text').textContent = 'Uploading…';
+
+    // Upload to R2 — use current trip id
+    const t = currentTrip();
+    if(t) {
+      const key = await uploadPhotoToR2(dataUrl, t.id);
+      if(key) {
+        settingsCoverPhoto = key; // store R2 key
+        // Update preview to use R2 URL
+        document.getElementById('coverPreviewImg').src = photoUrl(key);
+        toast('Cover photo uploaded ✓', 'success', 1800);
+      } else {
+        // R2 failed — fall back to base64 (will fail if too large for D1)
+        settingsCoverPhoto = dataUrl;
+        toast('Cover photo stored locally (R2 unavailable)', '', 3000);
+      }
+    } else {
+      settingsCoverPhoto = dataUrl;
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -2239,12 +2259,19 @@ async function saveTripSettings() {
   if (settingsCoverPhoto === false) {
     t.coverPhoto = null;
   } else if (settingsCoverPhoto) {
-    t.coverPhoto = settingsCoverPhoto;
+    // Only store if it's an R2 key or null — never store raw base64 in D1
+    const isKey = typeof settingsCoverPhoto === 'string' && !settingsCoverPhoto.startsWith('data:');
+    if(isKey) {
+      t.coverPhoto = settingsCoverPhoto;
+    } else {
+      toast('Cover photo too large for storage — please try again', 'error', 4000);
+      return;
+    }
   }
   if(oldName !== name) logHistory(t, 'edited', '—', `Trip renamed to "${name}"`, null, null);
   closeModal('modalTripSettings');
   renderAll(); renderHome();
-  await save(()=>api('PUT','/trips/'+t.id,{name,startDate:t.startDate,endDate:t.endDate,icon:t.icon,coverPhoto:t.coverPhoto}));
+  await save(()=>api('PUT','/trips/'+t.id,{name,startDate:t.startDate,endDate:t.endDate,icon:t.icon,coverPhoto:t.coverPhoto||null}));
   toast('Trip updated', 'success');
 }
 

@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: e817c6e
+//  Kitty API Worker  rev: 2a2fb41
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = 'e817c6e';
+const REV = '2a2fb41';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
