@@ -948,6 +948,50 @@
     border: 1px solid var(--border);
   }
 
+
+  /* ── HOW WE GOT HERE ── */
+  .explain-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; cursor: pointer; user-select: none;
+    border-top: 1px solid var(--border); margin-top: 10px;
+  }
+  .explain-toggle-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--ink-3);
+  }
+  .explain-toggle-icon {
+    font-size: 11px; color: var(--ink-4); transition: transform 0.2s;
+  }
+  .explain-toggle-icon.open { transform: rotate(180deg); }
+  .explain-panel { display: none; }
+  .explain-panel.open { display: block; }
+  .explain-summary {
+    font-size: 12px; line-height: 1.6; color: var(--ink-2);
+    padding: 6px 0 10px; border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .explain-exp-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto;
+    gap: 4px 8px;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px; align-items: start;
+  }
+  .explain-exp-row:last-child { border-bottom: none; }
+  .explain-exp-name { font-weight: 500; color: var(--ink); grid-column: 1; }
+  .explain-exp-role { color: var(--ink-3); grid-column: 1; font-size: 10px; }
+  .explain-exp-amt  { font-family: 'Roboto Mono', monospace; font-size: 11px; text-align: right; }
+  .explain-exp-net  { font-family: 'Roboto Mono', monospace; font-size: 11px; text-align: right; font-weight: 600; }
+  .explain-exp-calc { font-size: 10px; color: var(--ink-3); grid-column: 1 / -1; padding-left: 0; }
+  .explain-running  {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 7px 10px; margin-top: 8px;
+    background: var(--surface-2); border-radius: 7px; font-size: 12px;
+  }
+  .explain-running-label { color: var(--ink-2); font-weight: 500; }
+  .explain-running-val   { font-family: 'Roboto Mono', monospace; font-weight: 700; }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1434,7 +1478,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'c95bbe8';
+const REV = '5936288';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -2868,6 +2912,48 @@ function settleDebts(net) {
   return settlements;
 }
 
+
+// Build a full per-person explanation for one expense
+function expExplanation(exp) {
+  const shares = computeExpenseShares(exp);
+  const result = {};
+  // For each person in splitBetween, show what they owe
+  exp.splitBetween.forEach(p => {
+    const share = dsRound(shares[p] || 0);
+    const isPayer = p === exp.paidBy;
+    let calc = '';
+    if (exp.splitType === 'even' || !exp.splitType) {
+      calc = fmt(exp.amount) + ' ÷ ' + exp.splitBetween.length + ' = ' + fmt(share);
+    } else if (exp.splitType === 'percentage') {
+      const pct = exp.shares && exp.shares[p] != null ? exp.shares[p] : 0;
+      calc = fmt(exp.amount) + ' × ' + pct + '% = ' + fmt(share);
+    } else {
+      calc = 'fixed = ' + fmt(share);
+    }
+    result[p] = { share, isPayer, calc };
+  });
+  return result;
+}
+
+// Build plain-English narrative for a person's balance
+function buildNarrative(person, expenses, net) {
+  const t = currentTrip();
+  const n = dsRound(net[person] || 0);
+  const paid = expenses.filter(e=>e.paidBy===person).reduce((s,e)=>s+e.amount,0);
+  const share = expenses.reduce((s,e)=>{
+    const shares = computeExpenseShares(e);
+    return s + dsRound(shares[person]||0);
+  }, 0);
+  const lines = [];
+  if (paid > 0.01) lines.push(person + ' paid ' + fmt(paid) + ' upfront across ' + expenses.filter(e=>e.paidBy===person).length + ' expense' + (expenses.filter(e=>e.paidBy===person).length!==1?'s':'') + '.');
+  const involvedIn = expenses.filter(e=>e.splitBetween.includes(person)).length;
+  lines.push('Their total fair share across ' + involvedIn + ' expense' + (involvedIn!==1?'s':'') + ' is ' + fmt(dsRound(share)) + '.');
+  if (n > 0.01) lines.push('Since they paid more than their share, they are owed ' + fmt(n) + ' back.');
+  else if (n < -0.01) lines.push('Since they paid less than their share, they owe ' + fmt(Math.abs(n)) + '.');
+  else lines.push('They paid exactly their share — nothing owed either way.');
+  return lines.join(' ');
+}
+
 function renderBalances() {
   const t = currentTrip();
   const net = computeNet();
@@ -2938,40 +3024,72 @@ function renderBalances() {
       !oweRows.length && Math.abs(n)<0.01 ? `<div style="font-size:11px;color:var(--ink-3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">✓ Settled up</div>` : '',
     ].join('');
 
+    // Build the "how we got here" expense breakdown
+    const personExpenses = t.expenses.filter(e=>e.enabled!==false&&(e.paidBy===p||e.splitBetween.includes(p)));
+    const narrative = buildNarrative(p, personExpenses, net);
+    const panelId = 'explain_'+p.replace(/\s+/g,'_');
+    let runningBal = 0;
+    const expRows = personExpenses.map(exp => {
+      const expl = expExplanation(exp);
+      const info = expl[p];
+      const isPayer = exp.paidBy === p;
+      let effect = 0;
+      if (isPayer) effect = dsRound(effect + exp.amount);
+      if (info) effect = dsRound(effect - info.share);
+      runningBal = dsRound(runningBal + effect);
+      const effColor = effect > 0.005 ? 'var(--green)' : effect < -0.005 ? 'var(--red)' : 'var(--ink-3)';
+      const roleText = isPayer && info
+        ? 'paid ' + fmt(exp.amount) + ', own share back: −' + fmt(info.share)
+        : info ? 'share of expense' : 'not in split';
+      return '<div class="explain-exp-row">'
+        + '<span class="explain-exp-name">' + esc(exp.desc) + '</span>'
+        + '<span class="explain-exp-amt" style="color:' + effColor + '">' + (effect>0?'+':'') + fmt(effect) + '</span>'
+        + '<span style="grid-column:1;font-size:10px;color:var(--ink-3)">' + roleText + '</span>'
+        + '<span class="explain-exp-calc" style="grid-column:2 / -1;font-size:10px;color:var(--ink-3)">' + (info?info.calc:'') + '</span>'
+        + '</div>';
+    }).join('');
+
     const card = document.createElement('div');
     card.className = 'bal-person-card';
-    card.innerHTML = `
-      <div class="bal-person-header">
-        <div class="av" style="background:${pColor(p,t.people)};width:32px;height:32px;font-size:12px">${initials(p)}</div>
-        <div class="bal-person-name">${esc(p)}</div>
-        <span class="bal-net-pill ${netCls}">${netLabel}</span>
-      </div>
-      <div class="bal-person-rows">
-        <div class="bal-stat-row">
-          <span class="bal-stat-label">Paid upfront</span>
-          <span class="bal-stat-value">${fmt(paid)}</span>
-        </div>
-        <div class="bal-stat-row">
-          <span class="bal-stat-label">Fair share</span>
-          <span class="bal-stat-value">${fmt(share)}</span>
-        </div>
-        <div class="bal-stat-row">
-          <span class="bal-stat-label">Expenses in</span>
-          <span class="bal-stat-value">${expenseCount[p]||0}</span>
-        </div>
-        <div class="bal-stat-row divider net-row">
-          <span class="bal-stat-label" style="font-weight:600">Net position</span>
-          <span class="bal-stat-value" style="color:${n>0.01?'var(--green)':n<-0.01?'var(--red)':'var(--ink-3)'}">${
-            n > 0.01 ? `gets back ${fmt(n)}`
-          : n < -0.01 ? `owes ${fmt(Math.abs(n))}`
-          : 'settled up'}</span>
-        </div>
-        ${oweSections}
-      </div>`;
+    const netValColor = n>0.01?'var(--green)':n<-0.01?'var(--red)':'var(--ink-3)';
+    const netValText = n>0.01?'gets back '+fmt(n):n<-0.01?'owes '+fmt(Math.abs(n)):'settled up';
+    card.innerHTML =
+      '<div class="bal-person-header">'
+      + '<div class="av" style="background:'+pColor(p,t.people)+';width:32px;height:32px;font-size:12px">'+initials(p)+'</div>'
+      + '<div class="bal-person-name">'+esc(p)+'</div>'
+      + '<span class="bal-net-pill '+netCls+'">'+netLabel+'</span>'
+      + '</div>'
+      + '<div class="bal-person-rows">'
+      + '<div class="bal-stat-row"><span class="bal-stat-label">Paid upfront</span><span class="bal-stat-value">'+fmt(paid)+'</span></div>'
+      + '<div class="bal-stat-row"><span class="bal-stat-label">Fair share</span><span class="bal-stat-value">'+fmt(share)+'</span></div>'
+      + '<div class="bal-stat-row"><span class="bal-stat-label">Expenses in</span><span class="bal-stat-value">'+(expenseCount[p]||0)+'</span></div>'
+      + '<div class="bal-stat-row divider net-row"><span class="bal-stat-label" style="font-weight:600">Net position</span><span class="bal-stat-value" style="color:'+netValColor+'">'+netValText+'</span></div>'
+      + oweSections
+      + '<div class="explain-toggle" data-panel="'+panelId+'">'
+      + '<span class="explain-toggle-label">How we got here</span>'
+      + '<span class="explain-toggle-icon">▼</span>'
+      + '</div>'
+      + '<div class="explain-panel" id="'+panelId+'">'
+      + '<div class="explain-summary">'+narrative+'</div>'
+      + expRows
+      + '<div class="explain-running"><span class="explain-running-label">Final net</span><span class="explain-running-val" style="color:'+netValColor+'">'+(n>0.01?'+':'')+fmt(n)+'</span></div>'
+      + '</div>'
+      + '</div>';
     cardsGrid.appendChild(card);
   });
   summaryWrap.appendChild(cardsGrid);
   grid.appendChild(summaryWrap);
+  // Wire explain toggles via delegation
+  cardsGrid.addEventListener('click', e => {
+    const tog = e.target.closest('.explain-toggle');
+    if(!tog) return;
+    const pid = tog.dataset.panel;
+    if(!pid) return;
+    const panel = document.getElementById(pid);
+    const icon  = tog.querySelector('.explain-toggle-icon');
+    if(panel) panel.classList.toggle('open');
+    if(icon)  icon.classList.toggle('open');
+  });
 
   // ── 2. Expense breakdown table ────────────────────────────
   if (t.expenses.length) {
