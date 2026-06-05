@@ -922,6 +922,32 @@
     width: 38px; text-align: right; color: var(--ink); flex-shrink: 0;
   }
 
+
+  /* ── EXPENSE ENABLED TOGGLE ── */
+  .exp-toggle {
+    flex-shrink: 0; display: flex; align-items: center;
+    padding: 4px; cursor: pointer; opacity: 0.5;
+    transition: opacity 0.15s;
+  }
+  .exp-toggle:hover { opacity: 1; }
+  .exp-toggle input[type="checkbox"] {
+    width: 15px; height: 15px; cursor: pointer;
+    accent-color: var(--green);
+  }
+  .expense-item.disabled {
+    opacity: 0.45;
+  }
+  .expense-item.disabled .exp-amount {
+    text-decoration: line-through;
+    color: var(--ink-3);
+  }
+  .exp-disabled-badge {
+    font-size: 10px; font-weight: 600; padding: 2px 6px;
+    border-radius: 100px; background: var(--surface-2);
+    color: var(--ink-3); margin-left: 4px;
+    border: 1px solid var(--border);
+  }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1408,7 +1434,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '500ac9f';
+const REV = 'c95bbe8';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -1726,6 +1752,7 @@ async function loadTrip(id) {
         date: e.date||'', note: e.note||'', category: e.category||'other',
         splitBetween: e.splitBetween||[], photo: e.photo||null,
         splitType: e.splitType||'even', shares: e.shares||null,
+        enabled: e.enabled !== false,
         paidSettlements: e.paidSettlements||{}
       })),
       history: (data.history||[]).map(h=>({
@@ -1894,7 +1921,8 @@ function onWhoChange() {
 
 function renderAll() {
   const t=currentTrip(); if(!t) return;
-  const total=t.expenses.reduce((s,e)=>s+e.amount,0);
+  const total=t.expenses.filter(e=>e.enabled!==false).reduce((s,e)=>s+e.amount,0);
+  const disabledCount=t.expenses.filter(e=>e.enabled===false).length;
   // settled summary
   const net=computeNet();
   const allDebts=[];
@@ -1915,7 +1943,7 @@ function renderAll() {
     return (t.settledPayments||[]).some(p=>p.id===sid);
   }).length;
   document.getElementById('sumTotal').textContent=fmt(total);
-  document.getElementById('sumCount').textContent=t.expenses.length;
+  document.getElementById('sumCount').textContent=t.expenses.length+(disabledCount>0?' ('+disabledCount+' excluded)':'');
   document.getElementById('sumPeople').textContent=t.people.length;
   document.getElementById('sumPer').textContent=t.people.length?fmt(total/t.people.length):'$0';
   // Use the settlement engine to compute outstanding vs settled amounts
@@ -1993,10 +2021,15 @@ function renderExpenses() {
     const splitTypeBadge = exp.splitType && exp.splitType!=='even'
       ? `<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:100px;background:var(--blue-bg);color:var(--blue);margin-left:4px">${exp.splitType==='percentage'?'%':'$'} split</span>`
       : '';
+    const isEnabled = exp.enabled !== false; // default true
+    if(!isEnabled) div.classList.add('disabled');
     div.innerHTML=`
+      <label class="exp-toggle" onclick="event.stopPropagation()" title="${isEnabled?'Click to disable':'Click to enable'}">
+        <input type="checkbox" ${isEnabled?'checked':''} onchange="toggleExpenseEnabled('${exp.id}',this.checked)">
+      </label>
       <div class="exp-icon">${CATS[exp.category]||'📦'}</div>
       <div class="exp-body">
-        <div class="exp-name">${esc(exp.desc)}</div>
+        <div class="exp-name">${esc(exp.desc)}${!isEnabled?' <span class="exp-disabled-badge">excluded</span>':''}</div>
         <div class="exp-meta">${exp.date?exp.date+' · ':''}${exp.category}</div>
         <div class="exp-tags">${tags}</div>
         ${exp.note?`<div class="exp-note">${esc(exp.note)}</div>`:''}
@@ -2008,7 +2041,7 @@ function renderExpenses() {
         <div class="exp-payer">paid by ${esc(exp.paidBy)}</div>
       </div>
       <button class="exp-delete" onclick="event.stopPropagation();delExp('${exp.id}')" title="Delete">✕</button>`;
-    div.addEventListener('click', e => { if(!e.target.closest('.exp-delete')&&!e.target.closest('.exp-receipt')) showExpenseDetail(exp.id); });
+    div.addEventListener('click', e => { if(!e.target.closest('.exp-delete')&&!e.target.closest('.exp-receipt')&&!e.target.closest('.exp-toggle')) showExpenseDetail(exp.id); });
     list.appendChild(div);
     // Update split badge now that div is in DOM
     const splitEl = div.querySelector('.exp-split-'+exp.id);
@@ -2058,6 +2091,31 @@ function showExpenseDetail(id) {
   const eachRow=document.createElement('div'); eachRow.className='detail-row';
   eachRow.innerHTML=`<div class="detail-row-label">Each owes</div><div class="detail-row-value" style="font-weight:700">${each}</div>`;
   body.appendChild(eachRow);
+
+  // Enabled/disabled toggle row
+  const enabledRow=document.createElement('div'); enabledRow.className='detail-row';
+  const isExpEnabled = exp.enabled !== false;
+  enabledRow.innerHTML=`
+    <div class="detail-row-label">Include in totals</div>
+    <div class="detail-row-value" style="display:flex;align-items:center;gap:8px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+        <input type="checkbox" id="detailEnabledToggle" ${isExpEnabled?'checked':''}
+          style="width:15px;height:15px;accent-color:var(--green);cursor:pointer">
+        <span id="detailEnabledLabel" style="color:${isExpEnabled?'var(--green)':'var(--ink-3)'};font-weight:600">
+          ${isExpEnabled?'Enabled':'Excluded'}
+        </span>
+      </label>
+    </div>`;
+  body.appendChild(enabledRow);
+  // Wire toggle
+  setTimeout(()=>{
+    const chk=document.getElementById('detailEnabledToggle');
+    if(chk) chk.addEventListener('change', async e=>{
+      const lbl=document.getElementById('detailEnabledLabel');
+      if(lbl){ lbl.textContent=e.target.checked?'Enabled':'Excluded'; lbl.style.color=e.target.checked?'var(--green)':'var(--ink-3)'; }
+      await toggleExpenseEnabled(exp.id, e.target.checked);
+    });
+  },50);
 
   // Note
   if(exp.note){
@@ -2704,7 +2762,7 @@ function computeNetRaw() {
   const t = currentTrip();
   const net = {};
   t.people.forEach(p => net[p] = 0);
-  t.expenses.forEach(exp => {
+  t.expenses.filter(exp=>exp.enabled!==false).forEach(exp => {
     const share = exp.splitBetween.length ? dsRound(exp.amount / exp.splitBetween.length) : 0;
     exp.splitBetween.forEach(person => {
       if (person === exp.paidBy) return;
@@ -2752,7 +2810,7 @@ function computeExpenseShares(exp) {
 function buildTransactions() {
   const t = currentTrip();
   const txns = [];
-  t.expenses.forEach(exp => {
+  t.expenses.filter(exp=>exp.enabled!==false).forEach(exp => {
     const expShares = computeExpenseShares(exp);
     exp.splitBetween.forEach(person => {
       if (person === exp.paidBy) return;
@@ -2826,7 +2884,7 @@ function renderBalances() {
   const expenseCount = {};  // how many expenses each person is involved in
   t.people.forEach(p => { totalPaid[p]=0; totalShare[p]=0; expenseCount[p]=0; });
 
-  t.expenses.forEach(exp => {
+  t.expenses.filter(exp=>exp.enabled!==false).forEach(exp => {
     totalPaid[exp.paidBy] = dsRound((totalPaid[exp.paidBy]||0) + exp.amount);
     const share = exp.splitBetween.length ? dsRound(exp.amount / exp.splitBetween.length) : 0;
     exp.splitBetween.forEach(p => {
@@ -3506,6 +3564,31 @@ function bindAmountListener(ns) {
   const id = ns==='ed' ? 'editAmount' : 'eAmount';
   const el = document.getElementById(id);
   if(el) el.addEventListener('input', ()=>renderSharesGrid(ns));
+}
+
+
+async function toggleExpenseEnabled(id, enabled) {
+  const t = currentTrip();
+  const exp = t.expenses.find(e=>e.id===id); if(!exp) return;
+  exp.enabled = enabled;
+  lsSave();
+  renderAll();
+  // Persist to D1
+  await save(async()=>{
+    await api('PUT','/expenses/'+id, {
+      desc: exp.desc, amount: exp.amount, paidBy: exp.paidBy,
+      date: exp.date, note: exp.note, category: exp.category,
+      splitBetween: exp.splitBetween, splitType: exp.splitType||'even',
+      shares: exp.shares||null,
+      photoKey: exp.photo && !exp.photo.startsWith('data:') ? exp.photo : null,
+      photo: exp.photo && exp.photo.startsWith('data:') ? exp.photo : null,
+      paidSettlements: exp.paidSettlements||{},
+      enabled,
+      tripId: t.id
+    });
+  });
+  logHistory(t, 'edited', getWho(t.id)||exp.paidBy, exp.desc, exp.amount,
+    enabled ? 'expense re-enabled' : 'expense disabled');
 }
 
 async function saveExpense(){

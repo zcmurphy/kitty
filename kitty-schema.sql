@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   paid_settlements TEXT DEFAULT '{}',
   split_type       TEXT DEFAULT 'even',
   shares           TEXT DEFAULT NULL,
+  enabled          INTEGER DEFAULT 1,
   created_at       TEXT NOT NULL
 );
 

@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 500ac9f
+//  Kitty API Worker  rev: c95bbe8
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '500ac9f';
+const REV = 'c95bbe8';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -392,6 +392,7 @@ export default {
             e.paidSettlements = JSON.parse(e.paid_settlements || '{}');
             e.splitType       = e.split_type || 'even';
             e.shares          = e.shares ? JSON.parse(e.shares) : null;
+            e.enabled         = e.enabled !== 0;
             if (e.photo) e.photoUrl = `${url.origin}/api/photos/${e.photo}`;
           });
           if (trip.cover_photo) trip.coverPhotoUrl = `${url.origin}/api/photos/${trip.cover_photo}`;
@@ -499,11 +500,12 @@ export default {
           const authed = await validateAccess(req, env, b.tripId, sess);
           if (!authed) return respond({ error: 'Unauthorized' }, 401);
           await env.DB.prepare(
-            `INSERT INTO expenses (id,trip_id,desc,amount,paid_by,date,note,category,split_between,photo,paid_settlements,split_type,shares,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+            `INSERT INTO expenses (id,trip_id,desc,amount,paid_by,date,note,category,split_between,photo,paid_settlements,split_type,shares,enabled,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
           ).bind(b.id, b.tripId, b.desc, b.amount, b.paidBy, b.date||null, b.note||null,
                  b.category||'other', JSON.stringify(b.splitBetween||[]),
                  (b.photoKey||(b.photo&&typeof b.photo==='string'&&!b.photo.startsWith('data:')?b.photo:null))||null, JSON.stringify(b.paidSettlements||{}),
                  b.splitType||'even', b.shares ? JSON.stringify(b.shares) : null,
+                 b.enabled===false ? 0 : 1,
                  new Date().toISOString()).run();
           return respond({ ok: true });
         }
@@ -512,11 +514,12 @@ export default {
           const authed = await validateAccess(req, env, b.tripId, sess);
           if (!authed) return respond({ error: 'Unauthorized' }, 401);
           await env.DB.prepare(
-            `UPDATE expenses SET desc=?,amount=?,paid_by=?,date=?,note=?,category=?,split_between=?,photo=?,paid_settlements=?,split_type=?,shares=? WHERE id=?`
+            `UPDATE expenses SET desc=?,amount=?,paid_by=?,date=?,note=?,category=?,split_between=?,photo=?,paid_settlements=?,split_type=?,shares=?,enabled=? WHERE id=?`
           ).bind(b.desc, b.amount, b.paidBy, b.date||null, b.note||null, b.category||'other',
                  JSON.stringify(b.splitBetween||[]), (b.photoKey||(b.photo&&typeof b.photo==='string'&&!b.photo.startsWith('data:')?b.photo:null))||null,
                  JSON.stringify(b.paidSettlements||{}),
                  b.splitType||'even', b.shares ? JSON.stringify(b.shares) : null,
+                 b.enabled===false ? 0 : 1,
                  id).run();
           return respond({ ok: true });
         }
