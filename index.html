@@ -992,6 +992,36 @@
   .explain-running-label { color: var(--ink-2); font-weight: 500; }
   .explain-running-val   { font-family: 'Roboto Mono', monospace; font-weight: 700; }
 
+
+  /* ── BREAKDOWN TABLE ── */
+  .bdt-table {
+    border-collapse: collapse; font-size: 12px;
+    width: 100%; min-width: 500px;
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .bdt-table th {
+    background: var(--surface-2); padding: 8px 10px;
+    font-size: 11px; font-weight: 600; text-align: center;
+    color: var(--ink-2); border-bottom: 1.5px solid var(--border);
+    white-space: nowrap;
+  }
+  .bdt-table td { border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .bdt-table tr:last-child td { border-bottom: none; }
+  .bdt-table tr:hover td { background: var(--surface-2); }
+  .bdt-exp-col { text-align: left !important; width: 180px; }
+  .bdt-num-col { width: 70px; }
+  .bdt-exp-name { padding: 8px 10px; }
+  .bdt-num-val  { padding: 8px 10px; text-align: right; font-family: 'Roboto Mono', monospace; font-size: 12px; color: var(--ink-2); }
+  .bdt-person-col { padding: 6px 6px; border-left: 2px solid var(--border); }
+  .bdt-sub-col { flex: 1; text-align: center; font-size: 10px; font-weight: 600; padding: 0 4px; }
+  .bdt-sub-val { flex: 1; text-align: center; padding: 0 2px; }
+  .bdt-debt   { font-family: 'Roboto Mono', monospace; font-size: 11px; color: var(--red); }
+  .bdt-credit { font-family: 'Roboto Mono', monospace; font-size: 11px; color: var(--green); }
+  .bdt-total-row td { background: var(--surface-2); border-top: 1.5px solid var(--border); padding: 8px 10px; }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1478,7 +1508,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '5936288';
+const REV = '71cf5d8';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -3024,30 +3054,11 @@ function renderBalances() {
       !oweRows.length && Math.abs(n)<0.01 ? `<div style="font-size:11px;color:var(--ink-3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">✓ Settled up</div>` : '',
     ].join('');
 
-    // Build the "how we got here" expense breakdown
+    // Narrative only — full table is rendered below all cards
     const personExpenses = t.expenses.filter(e=>e.enabled!==false&&(e.paidBy===p||e.splitBetween.includes(p)));
     const narrative = buildNarrative(p, personExpenses, net);
     const panelId = 'explain_'+p.replace(/\s+/g,'_');
-    let runningBal = 0;
-    const expRows = personExpenses.map(exp => {
-      const expl = expExplanation(exp);
-      const info = expl[p];
-      const isPayer = exp.paidBy === p;
-      let effect = 0;
-      if (isPayer) effect = dsRound(effect + exp.amount);
-      if (info) effect = dsRound(effect - info.share);
-      runningBal = dsRound(runningBal + effect);
-      const effColor = effect > 0.005 ? 'var(--green)' : effect < -0.005 ? 'var(--red)' : 'var(--ink-3)';
-      const roleText = isPayer && info
-        ? 'paid ' + fmt(exp.amount) + ', own share back: −' + fmt(info.share)
-        : info ? 'share of expense' : 'not in split';
-      return '<div class="explain-exp-row">'
-        + '<span class="explain-exp-name">' + esc(exp.desc) + '</span>'
-        + '<span class="explain-exp-amt" style="color:' + effColor + '">' + (effect>0?'+':'') + fmt(effect) + '</span>'
-        + '<span style="grid-column:1;font-size:10px;color:var(--ink-3)">' + roleText + '</span>'
-        + '<span class="explain-exp-calc" style="grid-column:2 / -1;font-size:10px;color:var(--ink-3)">' + (info?info.calc:'') + '</span>'
-        + '</div>';
-    }).join('');
+    const expRows = '';
 
     const card = document.createElement('div');
     card.className = 'bal-person-card';
@@ -3071,8 +3082,7 @@ function renderBalances() {
       + '</div>'
       + '<div class="explain-panel" id="'+panelId+'">'
       + '<div class="explain-summary">'+narrative+'</div>'
-      + expRows
-      + '<div class="explain-running"><span class="explain-running-label">Final net</span><span class="explain-running-val" style="color:'+netValColor+'">'+(n>0.01?'+':'')+fmt(n)+'</span></div>'
+      + '<div style="font-size:11px;color:var(--ink-3);margin-top:4px">See the full breakdown table below ↓</div>'
       + '</div>'
       + '</div>';
     cardsGrid.appendChild(card);
@@ -3090,6 +3100,136 @@ function renderBalances() {
     if(panel) panel.classList.toggle('open');
     if(icon)  icon.classList.toggle('open');
   });
+
+  // ── Unified breakdown table ───────────────────────────────
+  const tableSection = document.createElement('div');
+  tableSection.style.marginTop = '24px';
+
+  // Toggle header
+  const tableToggle = document.createElement('div');
+  tableToggle.className = 'explain-toggle';
+  tableToggle.dataset.panel = 'breakdownTable';
+  tableToggle.style.cssText = 'border-top:none;padding:0 0 10px 0';
+  tableToggle.innerHTML = '<span class="bal-section-title" style="margin:0">How we got here — full breakdown</span><span class="explain-toggle-icon" id="breakdown-icon">▼</span>';
+  tableSection.appendChild(tableToggle);
+
+  const tablePanel = document.createElement('div');
+  tablePanel.className = 'explain-panel open'; // open by default
+  tablePanel.id = 'breakdownTable';
+
+  // Build the matrix
+  const people = t.people;
+  const activeExp = t.expenses.filter(e=>e.enabled!==false);
+
+  // Column headers — one per person, plus expense label and total
+  let thead = '<tr><th class="bdt-exp-col">Expense</th><th class="bdt-num-col">Total</th>';
+  people.forEach(p => {
+    thead += '<th class="bdt-num-col" style="border-left:2px solid var(--border)">'
+      + '<div style="display:flex;align-items:center;justify-content:center;gap:4px">'
+      + '<div style="width:16px;height:16px;border-radius:50%;background:'+pColor(p,people)+';display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff">'+initials(p)+'</div>'
+      + '<span>'+esc(p)+'</span></div>'
+      + '<div style="display:flex;gap:0;margin-top:3px;border-top:1px solid var(--border);padding-top:3px">'
+      + '<span class="bdt-sub-col" style="color:var(--red)">Debt</span>'
+      + '<span class="bdt-sub-col" style="color:var(--green)">Credit</span>'
+      + '</div>'
+      + '</th>';
+  });
+  thead += '<th class="bdt-num-col" style="border-left:2px solid var(--border)">Net</th></tr>';
+
+  // Data rows — one per expense
+  let tbody = '';
+  const colNet = {}; // running column totals
+  people.forEach(p => colNet[p] = 0);
+  let grandTotal = 0;
+
+  activeExp.forEach(exp => {
+    const shares = computeExpenseShares(exp);
+    let row = '<tr>';
+    // Expense label
+    row += '<td class="bdt-exp-name">'
+      + '<div style="font-weight:500;font-size:12px">'+esc(exp.desc)+'</div>'
+      + '<div style="font-size:10px;color:var(--ink-3)">'
+        + (CATS[exp.category]||'') + ' · paid by '
+        + '<span style="font-weight:500;color:'+pColor(exp.paidBy,people)+'">'+esc(exp.paidBy)+'</span>'
+      + '</div>'
+    + '</td>';
+    // Total
+    row += '<td class="bdt-num-val" style="font-weight:600">'+fmt(exp.amount)+'</td>';
+    grandTotal = dsRound(grandTotal + exp.amount);
+
+    // Per-person columns
+    people.forEach(p => {
+      const share   = dsRound(shares[p] || 0);
+      const isPayer = exp.paidBy === p;
+      const inSplit = exp.splitBetween.includes(p);
+
+      let debtCell = '', creditCell = '', calcTip = '';
+
+      if (isPayer && inSplit) {
+        // Paid and is in split: credit full amount, debt own share
+        debtCell  = '<span class="bdt-debt">'+fmt(share)+'</span>';
+        creditCell= '<span class="bdt-credit">'+fmt(exp.amount)+'</span>';
+        calcTip   = 'Paid '+fmt(exp.amount)+', own share '+fmt(share);
+        colNet[p] = dsRound(colNet[p] + exp.amount - share);
+      } else if (isPayer) {
+        // Paid but not in split: full credit
+        creditCell= '<span class="bdt-credit">'+fmt(exp.amount)+'</span>';
+        calcTip   = 'Paid '+fmt(exp.amount);
+        colNet[p] = dsRound(colNet[p] + exp.amount);
+      } else if (inSplit) {
+        // In split but didn't pay: debt = share
+        debtCell  = '<span class="bdt-debt">'+fmt(share)+'</span>';
+        // show calc
+        if (exp.splitType==='even'||!exp.splitType)
+          calcTip = fmt(exp.amount)+' ÷ '+exp.splitBetween.length;
+        else if (exp.splitType==='percentage')
+          calcTip = fmt(exp.amount)+' × '+(exp.shares&&exp.shares[p]!=null?exp.shares[p]:0)+'%';
+        else calcTip = 'fixed';
+        colNet[p] = dsRound(colNet[p] - share);
+      } else {
+        debtCell = creditCell = '<span style="color:var(--ink-4)">—</span>';
+      }
+
+      row += '<td class="bdt-person-col" title="'+calcTip+'">'
+        + '<div style="display:flex;gap:0">'
+        + '<div class="bdt-sub-val">'+debtCell+'</div>'
+        + '<div class="bdt-sub-val">'+creditCell+'</div>'
+        + '</div>';
+      if(calcTip && calcTip!=='—') row += '<div style="font-size:9px;color:var(--ink-4);text-align:center;margin-top:1px">'+calcTip+'</div>';
+      row += '</td>';
+    });
+
+    // Row net (should be zero — sanity check)
+    row += '<td class="bdt-num-val" style="color:var(--ink-4);font-size:10px">balanced</td>';
+    row += '</tr>';
+    tbody += row;
+  });
+
+  // Totals row
+  let totalRow = '<tr class="bdt-total-row">'
+    + '<td class="bdt-exp-name"><strong>Total</strong></td>'
+    + '<td class="bdt-num-val"><strong>'+fmt(grandTotal)+'</strong></td>';
+  people.forEach(p => {
+    const n = dsRound(colNet[p]);
+    const col = n>0.005?'var(--green)':n<-0.005?'var(--red)':'var(--ink-3)';
+    totalRow += '<td class="bdt-person-col" style="border-left:2px solid var(--border)">'
+      + '<div style="text-align:center;font-family:monospace;font-size:12px;font-weight:700;color:'+col+'">'
+      + (n>0.005?'+':'')+fmt(n)+'</div>'
+      + '<div style="font-size:10px;color:var(--ink-3);text-align:center">'+(n>0.005?'gets back':n<-0.005?'owes':'even')+'</div>'
+      + '</td>';
+  });
+  totalRow += '<td></td></tr>';
+
+  tablePanel.innerHTML = '<div style="overflow-x:auto"><table class="bdt-table"><thead>'+thead+'</thead><tbody>'+tbody+totalRow+'</tbody></table></div>';
+  tableSection.appendChild(tablePanel);
+
+  // Toggle wiring
+  tableToggle.addEventListener('click', () => {
+    tablePanel.classList.toggle('open');
+    document.getElementById('breakdown-icon').classList.toggle('open');
+  });
+
+  grid.appendChild(tableSection);
 
   // ── 2. Expense breakdown table ────────────────────────────
   if (t.expenses.length) {
