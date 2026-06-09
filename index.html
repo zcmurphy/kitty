@@ -1022,6 +1022,58 @@
   .bdt-credit { font-family: 'Roboto Mono', monospace; font-size: 11px; color: var(--green); }
   .bdt-total-row td { background: var(--surface-2); border-top: 1.5px solid var(--border); padding: 8px 10px; }
 
+
+  /* ── PERSON-TO-PERSON TABLE ── */
+  .p2p-matrix {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+    background: var(--surface);
+    border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    overflow: hidden;
+  }
+  .p2p-matrix th {
+    background: var(--surface-2); padding: 8px 12px;
+    font-size: 11px; font-weight: 600; text-align: center;
+    color: var(--ink-2); border-bottom: 1.5px solid var(--border);
+    white-space: nowrap;
+  }
+  .p2p-matrix th.row-header { text-align: left; }
+  .p2p-matrix td {
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border); text-align: center;
+    vertical-align: middle; font-size: 12px;
+  }
+  .p2p-matrix td.row-header {
+    text-align: left; font-weight: 500; background: var(--surface-2);
+    border-right: 1.5px solid var(--border);
+  }
+  .p2p-matrix tr:last-child td { border-bottom: none; }
+  .p2p-matrix td.self { background: var(--surface-2); color: var(--ink-4); }
+  .p2p-matrix td.has-debt { cursor: pointer; }
+  .p2p-matrix td.has-debt:hover { background: var(--surface-2); }
+  .p2p-debt   { color: var(--red);   font-family: 'Roboto Mono', monospace; font-weight: 600; }
+  .p2p-zero   { color: var(--ink-4); }
+  .p2p-header-note {
+    font-size: 11px; color: var(--ink-3); margin-bottom: 10px; line-height: 1.5;
+  }
+  /* Expandable detail rows */
+  .p2p-detail {
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--ink-2);
+  }
+  .p2p-detail td { padding: 6px 12px; text-align: left !important; border-right: none !important; }
+  .p2p-detail-inner { display: flex; flex-direction: column; gap: 3px; }
+  .p2p-detail-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 3px 8px; border-radius: 4px; gap: 12px;
+  }
+  .p2p-detail-row:hover { background: var(--border); }
+  .p2p-detail-desc { flex: 1; font-weight: 500; color: var(--ink); }
+  .p2p-detail-calc { color: var(--ink-3); font-size: 10px; }
+  .p2p-detail-amt  { font-family: 'Roboto Mono', monospace; font-weight: 600; color: var(--red); white-space: nowrap; }
+  .p2p-detail-settled { color: var(--green); font-size: 10px; margin-left: 4px; }
+  .p2p-total-row td { background: var(--surface-2); border-top: 1.5px solid var(--border); font-weight: 600; }
+  .p2p-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 11px; color: var(--ink-3); }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1508,7 +1560,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '71cf5d8';
+const REV = '9a1da18';
 
 // ── Invite token (legacy fallback — primary auth is now cookie session) ──
 function getToken(tripId) {
@@ -2966,6 +3018,204 @@ function expExplanation(exp) {
 }
 
 // Build plain-English narrative for a person's balance
+
+function buildP2PSection(t, net) {
+  const people = t.people;
+  if(people.length < 2) return null;
+  const activeExp = t.expenses.filter(e=>e.enabled!==false);
+
+  // Build pairwise debt map: p2p[debtor][creditor] = [{exp, share, calc, settled}]
+  const p2p = {};
+  people.forEach(a => { p2p[a]={}; people.forEach(b=>{ if(a!==b) p2p[a][b]=[]; }); });
+
+  activeExp.forEach(exp => {
+    const shares = computeExpenseShares(exp);
+    exp.splitBetween.forEach(person => {
+      if(person === exp.paidBy) return;
+      const share = dsRound(shares[person]||0);
+      if(share < 0.005) return;
+      let calc = '';
+      if(!exp.splitType||exp.splitType==='even')
+        calc = fmt(exp.amount)+' ÷ '+exp.splitBetween.length+' = '+fmt(share);
+      else if(exp.splitType==='percentage')
+        calc = fmt(exp.amount)+' × '+(exp.shares&&exp.shares[person]!=null?exp.shares[person]:0)+'% = '+fmt(share);
+      else
+        calc = 'fixed = '+fmt(share);
+      const settled = !!(exp.paidSettlements&&exp.paidSettlements[person]);
+      p2p[person][exp.paidBy].push({ exp, share, calc, settled });
+    });
+  });
+
+  // Compute totals
+  const p2pTotal = {};
+  people.forEach(a => { p2pTotal[a]={}; people.forEach(b=>{ if(a!==b) p2pTotal[a][b]=dsRound(p2p[a][b].reduce((s,r)=>s+r.share,0)); }); });
+
+  // Section wrapper
+  const section = document.createElement('div');
+  section.style.marginTop='24px';
+
+  // Toggle header
+  const togWrap = document.createElement('div');
+  togWrap.className='explain-toggle';
+  togWrap.dataset.panel='p2pPanel';
+  togWrap.style.cssText='border-top:none;padding:0 0 10px 0';
+  togWrap.innerHTML='<span class="bal-section-title" style="margin:0">Person-to-person direct debts</span><span class="explain-toggle-icon" id="p2p-icon">▼</span>';
+  section.appendChild(togWrap);
+
+  const panel = document.createElement('div');
+  panel.className='explain-panel open';
+  panel.id='p2pPanel';
+
+  // Note
+  const note = document.createElement('div');
+  note.className='p2p-header-note';
+  note.innerHTML='Raw pairwise debts from each expense — <strong>no netting, no greedy algorithm</strong>. '
+    +'Row = who owes, Column = who is owed. Click any cell to see the expenses behind it. '
+    +'This may show more transactions than the Settle Up tab.';
+  panel.appendChild(note);
+
+  // Build matrix table
+  const tbl = document.createElement('table');
+  tbl.className='p2p-matrix';
+  tbl.style.overflow='hidden';
+
+  // Header row
+  let thead = '<thead><tr><th class="row-header">owes → / ← is owed</th>';
+  people.forEach(b => {
+    thead += '<th><div style="display:flex;align-items:center;justify-content:center;gap:4px">'
+      +'<div style="width:16px;height:16px;border-radius:50%;background:'+pColor(b,people)+';display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:#fff">'+initials(b)+'</div>'
+      +'<span>'+esc(b)+'</span></div></th>';
+  });
+  // totals column header
+  thead += '<th>Total owes</th></tr></thead>';
+  tbl.innerHTML = thead;
+
+  const tbody = document.createElement('tbody');
+
+  // Data rows
+  people.forEach(a => {
+    const tr = document.createElement('tr');
+    // Row header
+    const th = document.createElement('td');
+    th.className='row-header';
+    th.innerHTML='<div style="display:flex;align-items:center;gap:5px">'
+      +'<div style="width:18px;height:18px;border-radius:50%;background:'+pColor(a,people)+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff">'+initials(a)+'</div>'
+      +esc(a)+'</div>';
+    tr.appendChild(th);
+
+    let rowTotal = 0;
+    people.forEach(b => {
+      const td = document.createElement('td');
+      if(a===b) {
+        td.className='self'; td.textContent='—';
+      } else {
+        const total = p2pTotal[a][b];
+        rowTotal = dsRound(rowTotal + total);
+        const items = p2p[a][b];
+        const settledAmt = dsRound(items.filter(r=>r.settled).reduce((s,r)=>s+r.share,0));
+        const outstanding = dsRound(total - settledAmt);
+        if(total < 0.005) {
+          td.className='p2p-zero'; td.textContent='—';
+        } else {
+          td.className='has-debt';
+          td.innerHTML='<span class="p2p-debt">'+fmt(total)+'</span>'
+            +(settledAmt>0.005?'<br><span style="font-size:9px;color:var(--green)">'+fmt(settledAmt)+' paid</span>':'')
+            +(outstanding>0.005?'<br><span style="font-size:9px;color:var(--red)">'+fmt(outstanding)+' left</span>':'');
+
+          // Expandable detail
+          const detailId = 'p2d_'+a.replace(/\s+/g,'_')+'_'+b.replace(/\s+/g,'_');
+          td.dataset.detail = detailId;
+
+          td.addEventListener('click', () => {
+            let detailRow = document.getElementById(detailId);
+            if(detailRow) {
+              detailRow.style.display = detailRow.style.display==='none' ? '' : 'none';
+              return;
+            }
+            // Build detail row
+            detailRow = document.createElement('tr');
+            detailRow.className='p2p-detail'; detailRow.id=detailId;
+            const dtd = document.createElement('td');
+            dtd.colSpan = people.length + 2;
+            const inner = document.createElement('div');
+            inner.className='p2p-detail-inner';
+            inner.innerHTML='<strong style="font-size:11px;color:var(--ink-2);margin-bottom:2px">'
+              +esc(a)+' owes '+esc(b)+':</strong>';
+            items.forEach(item => {
+              const row = document.createElement('div');
+              row.className='p2p-detail-row';
+              row.innerHTML='<span class="p2p-detail-desc">'+esc(item.exp.desc)+'</span>'
+                +'<span class="p2p-detail-calc">'+item.calc+'</span>'
+                +(item.settled?'<span class="p2p-detail-settled">✓ paid back</span>':'')
+                +'<span class="p2p-detail-amt">'+fmt(item.share)+'</span>';
+              inner.appendChild(row);
+            });
+            // Summary line
+            const sumLine = document.createElement('div');
+            sumLine.style.cssText='display:flex;justify-content:space-between;padding:5px 8px;margin-top:4px;border-top:1px solid var(--border);font-size:11px;font-weight:600';
+            sumLine.innerHTML='<span>Total '+esc(a)+' → '+esc(b)+'</span>'
+              +'<span style="font-family:monospace;color:var(--red)">'+fmt(total)+'</span>';
+            inner.appendChild(sumLine);
+            dtd.appendChild(inner);
+            detailRow.appendChild(dtd);
+            tr.insertAdjacentElement('afterend', detailRow);
+          });
+        }
+      }
+      tr.appendChild(td);
+    });
+
+    // Row total
+    const totalTd = document.createElement('td');
+    if(rowTotal > 0.005) {
+      totalTd.innerHTML='<span style="font-family:monospace;font-weight:700;color:var(--red)">'+fmt(rowTotal)+'</span>';
+    } else {
+      totalTd.innerHTML='<span style="color:var(--ink-4)">—</span>';
+    }
+    tr.appendChild(totalTd);
+    tbody.appendChild(tr);
+  });
+
+  // Column totals row
+  const totalTr = document.createElement('tr');
+  totalTr.className='p2p-total-row';
+  const totalTh = document.createElement('td');
+  totalTh.className='row-header'; totalTh.textContent='Total owed to';
+  totalTr.appendChild(totalTh);
+  people.forEach(b => {
+    const colTotal = dsRound(people.reduce((s,a)=>a===b?s:s+(p2pTotal[a]&&p2pTotal[a][b]||0),0));
+    const td = document.createElement('td');
+    if(colTotal > 0.005)
+      td.innerHTML='<span style="font-family:monospace;font-weight:700;color:var(--green)">'+fmt(colTotal)+'</span>';
+    else
+      td.innerHTML='<span style="color:var(--ink-4)">—</span>';
+    totalTr.appendChild(td);
+  });
+  const cornerTd = document.createElement('td'); totalTr.appendChild(cornerTd);
+  tbody.appendChild(totalTr);
+
+  tbl.appendChild(tbody);
+  panel.appendChild(tbl);
+
+  // Legend
+  const legend = document.createElement('div');
+  legend.className='p2p-legend';
+  legend.innerHTML='<span>→ Read each row as: [person] owes the column person this amount</span>'
+    +'<span style="color:var(--red)">■ red = owes</span>'
+    +'<span style="color:var(--green)">■ green = received back</span>'
+    +'<span>Click any cell to expand expense detail</span>';
+  panel.appendChild(legend);
+
+  section.appendChild(panel);
+
+  togWrap.addEventListener('click', () => {
+    panel.classList.toggle('open');
+    document.getElementById('p2p-icon').classList.toggle('open');
+  });
+
+  return section;
+}
+
 function buildNarrative(person, expenses, net) {
   const t = currentTrip();
   const n = dsRound(net[person] || 0);
@@ -3230,6 +3480,10 @@ function renderBalances() {
   });
 
   grid.appendChild(tableSection);
+
+  // ── Person-to-person direct debt matrix ──────────────────
+  const p2pSection = buildP2PSection(t, net);
+  if(p2pSection) grid.appendChild(p2pSection);
 
   // ── 2. Expense breakdown table ────────────────────────────
   if (t.expenses.length) {
