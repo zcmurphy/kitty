@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: c95bbe8
+//  Kitty API Worker  rev: 723ec2f
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = 'c95bbe8';
+const REV = '723ec2f';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -16,7 +16,7 @@ function corsHeaders(req) {
   return {
     'Access-Control-Allow-Origin':      origin,
     'Access-Control-Allow-Methods':     'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers':     'Content-Type, Authorization, X-Invite-Token, Cookie',
+    'Access-Control-Allow-Headers':     'Content-Type, Authorization, X-Invite-Token, Cookie, X-Session-Id',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -57,11 +57,14 @@ async function saveSession(env, sid, data) {
 }
 
 async function getOrCreateSession(req, env) {
-  const sid = getCookie(req, COOKIE_NAME);
+  // Try cookie first, then X-Session-Id header (mobile fallback)
+  const sid = getCookie(req, COOKIE_NAME)
+    || req.headers.get('X-Session-Id')
+    || null;
+
   if (sid) {
     const sess = await getSession(env, sid);
     if (sess) {
-      // Refresh TTL on activity
       sess.lastSeen = new Date().toISOString();
       await saveSession(env, sid, sess);
       return { sid, sess, isNew: false };

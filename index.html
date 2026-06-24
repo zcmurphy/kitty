@@ -838,14 +838,14 @@
   /* ── WHO OWES WHOM BREAKDOWN ── */
   .bal-owe-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
   .bal-owe-row {
-    display: flex; align-items: center; gap: 6px;
-    font-size: 11px; padding: 4px 0;
+    display: flex; align-items: center; gap: 7px;
+    font-size: 13px; padding: 6px 0;
     border-top: 1px solid var(--border);
   }
   .bal-owe-row:first-child { border-top: none; }
   .bal-owe-dir { color: var(--ink-3); flex-shrink: 0; font-size: 10px; width: 14px; text-align: center; }
   .bal-owe-name { flex: 1; font-weight: 500; color: var(--ink-2); }
-  .bal-owe-amt { font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .bal-owe-amt { font-weight: 700; font-variant-numeric: tabular-nums; flex-shrink: 0; font-size: 14px; }
   .bal-owe-amt.pos { color: var(--green); }
   .bal-owe-amt.neg { color: var(--red); }
   .bal-owe-label { font-size: 10px; font-weight: 600; text-transform: uppercase;
@@ -1560,9 +1560,13 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '9a1da18';
+const REV = '723ec2f';
 
-// ── Invite token (legacy fallback — primary auth is now cookie session) ──
+// ── Session ID (stored in localStorage as mobile cookie fallback) ──
+function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
+function setSessionId(sid) { if(sid) localStorage.setItem('kitty_sid', sid); }
+
+// ── Invite token ──
 function getToken(tripId) {
   return localStorage.getItem('kitty_token_'+tripId) || '';
 }
@@ -1595,16 +1599,24 @@ async function api(method, path, body, tripId) {
   setSyncDot('syncing');
   try {
     const token = tripId ? getToken(tripId) : (state.currentTripId ? getToken(state.currentTripId) : '');
+    const sid   = getSessionId();
     const opts = {
       method,
-      credentials: 'include',   // send/receive HttpOnly session cookie
-      headers: { 'Content-Type':'application/json', 'X-Invite-Token': token }
+      credentials: 'include',   // send cookie when available
+      headers: {
+        'Content-Type':   'application/json',
+        'X-Invite-Token': token,
+        ...(sid ? { 'X-Session-Id': sid } : {}),  // mobile cookie fallback
+      }
     };
     if(body) opts.body = JSON.stringify(body);
     const r = await fetch(API+path, opts);
     if(!r.ok) { const e=await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
     setSyncDot('ok');
-    return await r.json();
+    const data = await r.json();
+    // Store session ID from response for mobile fallback
+    if(data._sid) setSessionId(data._sid);
+    return data;
   } catch(e) {
     setSyncDot('err');
     throw e;
@@ -1833,6 +1845,7 @@ async function loadFromAPI() {
     });
 
     // Add any local-only trips not returned by server
+    // This handles mobile where cookie may not have been sent
     const serverIds = new Set(serverTrips.map(t => t.id));
     const localOnly = state.trips.filter(t => !serverIds.has(t.id) && localTokens[t.id]);
 
@@ -1840,6 +1853,12 @@ async function loadFromAPI() {
       ...serverTrips,
       ...localOnly
     ];
+
+    // If server returned no trips but we have local tokens + cached trips,
+    // force-show the local cache so the home screen isn't empty on mobile
+    if(serverTrips.length === 0 && state.trips.length === 0) {
+      lsLoad();  // restore from localStorage cache
+    }
 
     lsSave();
   } catch(e) {
@@ -2532,9 +2551,10 @@ async function checkJoinLink() {
   const tripId = params.get('trip');
   const token  = params.get('token');
   if(!tripId || !token) return false;
-  // Store the token locally and in server session
+  // Store token + session ID locally (critical for mobile cookie fallback)
   setToken(tripId, token);
-  await api('PATCH', '/session', { tripId, token }).catch(()=>{});
+  const patchRes = await api('PATCH', '/session', { tripId, token }).catch(()=>({}));
+  if(patchRes && patchRes._sid) setSessionId(patchRes._sid);
   // Clear URL params without reload
   window.history.replaceState({}, '', window.location.pathname);
   toast('Joined trip!', 'success');
@@ -2569,7 +2589,8 @@ async function doJoinTrip() {
     if (res.error) { errEl.textContent = res.error; btn.textContent='Join Trip →'; btn.disabled=false; return; }
     // Store token
     setToken(res.tripId, res.token);
-    await api('PATCH', '/session', { tripId: res.tripId, token: res.token }).catch(()=>{});
+    const joinPatch = await api('PATCH', '/session', { tripId: res.tripId, token: res.token }).catch(()=>({}));
+    if(joinPatch && joinPatch._sid) setSessionId(joinPatch._sid);
     // Add trip to local state if not already there
     if (!state.trips.find(t=>t.id===res.tripId)) {
       state.trips.push({
@@ -3063,7 +3084,7 @@ function buildP2PSection(t, net) {
   section.appendChild(togWrap);
 
   const panel = document.createElement('div');
-  panel.className='explain-panel open';
+  panel.className='explain-panel';
   panel.id='p2pPanel';
 
   // Note
@@ -3265,15 +3286,47 @@ function renderBalances() {
   const cardsGrid = document.createElement('div');
   cardsGrid.className = 'bal-summary-grid';
 
-  // Compute who specifically owes whom using the settlement engine
-  const settlements = settleDebts(net);
-  // Build lookup: for each person, list of {counterpart, amt, direction}
+  // ── Bottom line: direct pairwise debts (no greedy routing) ──
+  // raw[a][b] = outstanding amount a owes b from expenses b paid
+  const raw = {};
+  t.people.forEach(a => { raw[a]={}; t.people.forEach(b=>{ if(a!==b) raw[a][b]=0; }); });
+  t.expenses.filter(e=>e.enabled!==false).forEach(exp => {
+    const shares = computeExpenseShares(exp);
+    exp.splitBetween.forEach(person => {
+      if(person === exp.paidBy) return;
+      const share = dsRound(shares[person]||0);
+      const ps = exp.paidSettlements && exp.paidSettlements[person];
+      const settledAmt = ps ? (typeof ps==='object' ? dsRound(ps.amt) : share) : 0;
+      const outstanding = dsRound(share - settledAmt);
+      if(outstanding > 0.005 && raw[person] && raw[person][exp.paidBy] !== undefined) {
+        raw[person][exp.paidBy] = dsRound(raw[person][exp.paidBy] + outstanding);
+      }
+    });
+  });
+  // Trip-level settled payments reduce that pair's debt
+  (t.settledPayments||[]).forEach(sp => {
+    if(raw[sp.from] && raw[sp.from][sp.to] !== undefined) {
+      raw[sp.from][sp.to] = Math.max(0, dsRound(raw[sp.from][sp.to] - sp.amt));
+    }
+  });
+  // Net each pair against each other (A owes B $50, B owes A $20 → A owes B $30)
   const oweMap = {}; // oweMap[p] = [{name, amt, dir: 'owes'|'owed'}]
   t.people.forEach(p => oweMap[p] = []);
-  settlements.forEach(s => {
-    oweMap[s.from].push({ name: s.to,   amt: s.amt, dir: 'owes' });
-    oweMap[s.to  ].push({ name: s.from, amt: s.amt, dir: 'owed' });
-  });
+  for(let i=0;i<t.people.length;i++){
+    for(let j=i+1;j<t.people.length;j++){
+      const a=t.people[i], b=t.people[j];
+      const ab = raw[a][b]||0, ba = raw[b][a]||0;
+      const diff = dsRound(ab - ba);
+      if(diff > 0.005){
+        oweMap[a].push({ name: b, amt: diff, dir: 'owes' });
+        oweMap[b].push({ name: a, amt: diff, dir: 'owed' });
+      } else if(diff < -0.005){
+        oweMap[b].push({ name: a, amt: -diff, dir: 'owes' });
+        oweMap[a].push({ name: b, amt: -diff, dir: 'owed' });
+      }
+    }
+  }
+  t.people.forEach(p => oweMap[p].sort((x,y)=>y.amt-x.amt));
 
   t.people.forEach(p => {
     const n     = dsRound(net[p] || 0);
@@ -3321,11 +3374,10 @@ function renderBalances() {
       + '<span class="bal-net-pill '+netCls+'">'+netLabel+'</span>'
       + '</div>'
       + '<div class="bal-person-rows">'
-      + '<div class="bal-stat-row"><span class="bal-stat-label">Paid upfront</span><span class="bal-stat-value">'+fmt(paid)+'</span></div>'
+      + oweSections
+      + '<div class="bal-stat-row divider"><span class="bal-stat-label">Paid upfront</span><span class="bal-stat-value">'+fmt(paid)+'</span></div>'
       + '<div class="bal-stat-row"><span class="bal-stat-label">Fair share</span><span class="bal-stat-value">'+fmt(share)+'</span></div>'
       + '<div class="bal-stat-row"><span class="bal-stat-label">Expenses in</span><span class="bal-stat-value">'+(expenseCount[p]||0)+'</span></div>'
-      + '<div class="bal-stat-row divider net-row"><span class="bal-stat-label" style="font-weight:600">Net position</span><span class="bal-stat-value" style="color:'+netValColor+'">'+netValText+'</span></div>'
-      + oweSections
       + '<div class="explain-toggle" data-panel="'+panelId+'">'
       + '<span class="explain-toggle-label">How we got here</span>'
       + '<span class="explain-toggle-icon">▼</span>'
@@ -3364,7 +3416,7 @@ function renderBalances() {
   tableSection.appendChild(tableToggle);
 
   const tablePanel = document.createElement('div');
-  tablePanel.className = 'explain-panel open'; // open by default
+  tablePanel.className = 'explain-panel'; // collapsed by default — drill-down
   tablePanel.id = 'breakdownTable';
 
   // Build the matrix
