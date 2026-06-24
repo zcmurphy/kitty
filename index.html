@@ -1560,7 +1560,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '723ec2f';
+const REV = 'ddd60dd';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -1757,9 +1757,13 @@ async function loadFromAPI() {
   const loader=document.getElementById('screenLoader');
   loader.classList.remove('hidden');
 
-  // ── Step 1: collect all tokens stored locally ──────────────
-  // These are the ground truth on this browser regardless of
-  // what the server session knows about.
+  // ── Step 1: localStorage is the baseline — always load it first ──
+  // Never let a server response leave the screen emptier than the cache.
+  const hadLocalData = lsLoad();
+  const localSnapshot = {}; // snapshot of trips before any server merge
+  state.trips.forEach(t => { localSnapshot[t.id] = t; });
+
+  // ── Step 2: collect all locally-stored tokens ──────────────
   function localTokenMap() {
     const map = {};
     for (let i = 0; i < localStorage.length; i++) {
@@ -1772,102 +1776,97 @@ async function loadFromAPI() {
     }
     return map;
   }
+  const localTokens = localTokenMap();
 
   try {
-    // ── Step 2: fetch server session ──────────────────────────
+    // ── Step 3: fetch server session (sends both cookie + X-Session-Id) ──
     const sess = await api('GET', '/session');
 
-    // ── Step 3: re-register any locally-known tokens that the
-    //   server session is missing (survives cookie loss on refresh) ──
-    const localTokens = localTokenMap();
+    // ── Step 4: re-register tokens the server session doesn't know about ──
     const serverTokenIds = new Set(Object.keys(sess.tripTokens || {}));
     const missing = Object.entries(localTokens).filter(([tid]) => !serverTokenIds.has(tid));
     if (missing.length) {
       await Promise.all(missing.map(([tripId, token]) =>
         api('PATCH', '/session', { tripId, token }).catch(() => {})
       ));
-      // Re-fetch session now that we've re-registered
+      // Re-fetch session now that tokens are registered
       const refreshed = await api('GET', '/session').catch(() => sess);
       Object.assign(sess, refreshed);
     }
 
-    // ── Step 4: restore who-am-I from session ─────────────────
+    // ── Step 5: restore who-am-I ──────────────────────────────
     if (sess.whoByTrip) {
       Object.entries(sess.whoByTrip).forEach(([tid, who]) => {
         localStorage.setItem('kitty_who_' + tid, who);
       });
     }
 
-    // ── Step 5: sync all session tokens back to localStorage ──
+    // ── Step 6: sync session tokens to localStorage ───────────
     if (sess.tripTokens) {
       Object.entries(sess.tripTokens).forEach(([tid, tok]) => setToken(tid, tok));
     }
 
-    // ── Step 6: build trip list — union of server + local cache ──
-    // Keep a snapshot of what we already have loaded locally
-    const prevTrips = {};
-    state.trips.forEach(t => { prevTrips[t.id] = t; });
+    // ── Step 7: merge server trips into local baseline ────────
+    // Server trips win on metadata; local wins on full expense/people data
+    const serverTripMap = {};
+    (sess.trips || []).forEach(t => { serverTripMap[t.id] = t; });
 
-    const serverTrips = (sess.trips || []).map(t => {
-      const prev = prevTrips[t.id];
-      // If we have fully-loaded local data, keep it — just update metadata from server
-      if (prev && prev._loaded) {
+    // Start with ALL trips we know about (from server OR local)
+    const allTripIds = new Set([
+      ...Object.keys(serverTripMap),
+      ...Object.keys(localSnapshot),
+      ...Object.keys(localTokens), // trips with tokens we joined
+    ]);
+
+    state.trips = [...allTripIds].map(id => {
+      const server = serverTripMap[id];
+      const local  = localSnapshot[id];
+
+      if (!server && local) {
+        // Local only — we have a token but server didn't return it
+        // (common on mobile when re-registration hasn't propagated yet)
+        return local;
+      }
+      if (server && !local) {
+        // Server only — new trip not yet cached
         return {
-          ...prev,
-          name:       t.name,
-          code:       t.code || prev.code || '',
-          startDate:  t.start_date || prev.startDate || '',
-          endDate:    t.end_date   || prev.endDate   || '',
-          icon:       t.icon       || prev.icon      || '',
-          coverPhoto: t.cover_photo || t.coverPhoto  || prev.coverPhoto || null,
+          id, name: server.name, code: server.code || '',
+          startDate: server.start_date || '', endDate: server.end_date || '',
+          icon: server.icon || '', coverPhoto: server.cover_photo || null,
+          people: [], expenses: [], history: [], settledPayments: [],
+          _loaded: false,
+          _peopleCount: server.people_count || 0,
+          _expenseCount: server.expense_count || 0,
+          _totalAmount: server.total_amount || null,
         };
       }
-      // Not loaded yet — use server summary, preserve any partial local data
+      // Both exist — merge, keeping local full data, updating metadata
       return {
-        id:          t.id,
-        name:        t.name,
-        code:        t.code || '',
-        startDate:   t.start_date || '',
-        endDate:     t.end_date   || '',
-        icon:        t.icon       || '',
-        coverPhoto:  t.cover_photo || t.coverPhoto || null,
-        // Preserve local people/expenses if available, else empty
-        people:      prev?.people      || [],
-        expenses:    prev?.expenses    || [],
-        history:     prev?.history     || [],
-        settledPayments: prev?.settledPayments || [],
-        _loaded:     prev?._loaded     || false,
-        // Store server summary counts for home card display when not loaded
-        _peopleCount:   t.people_count   || prev?._peopleCount   || 0,
-        _expenseCount:  t.expense_count  || prev?._expenseCount  || 0,
-        _totalAmount:   t.total_amount   || prev?._totalAmount   || null,
+        ...(local || {}),
+        name:       server.name,
+        code:       server.code       || local?.code       || '',
+        startDate:  server.start_date || local?.startDate  || '',
+        endDate:    server.end_date   || local?.endDate    || '',
+        icon:       server.icon       || local?.icon       || '',
+        coverPhoto: server.cover_photo || local?.coverPhoto || null,
+        _peopleCount:  server.people_count  || local?._peopleCount  || 0,
+        _expenseCount: server.expense_count || local?._expenseCount || 0,
+        _totalAmount:  server.total_amount  || local?._totalAmount  || null,
       };
-    });
-
-    // Add any local-only trips not returned by server
-    // This handles mobile where cookie may not have been sent
-    const serverIds = new Set(serverTrips.map(t => t.id));
-    const localOnly = state.trips.filter(t => !serverIds.has(t.id) && localTokens[t.id]);
-
-    state.trips = [
-      ...serverTrips,
-      ...localOnly
-    ];
-
-    // If server returned no trips but we have local tokens + cached trips,
-    // force-show the local cache so the home screen isn't empty on mobile
-    if(serverTrips.length === 0 && state.trips.length === 0) {
-      lsLoad();  // restore from localStorage cache
-    }
+    }).filter(Boolean);
 
     lsSave();
+
   } catch(e) {
-    // ── Fallback: use localStorage entirely ───────────────────
-    const msg = e.message?.includes('401')
-      ? 'Session expired — please rejoin via invite link'
-      : 'Could not reach server — showing cached data';
-    toast(msg, 'error', 4000);
-    lsLoad();
+    // ── Fallback: localStorage already loaded in Step 1 ───────
+    // Only show error if we ended up with nothing
+    if(!state.trips.length) {
+      const msg = e.message?.includes('401')
+        ? 'Session expired — please rejoin via invite link'
+        : 'Could not reach server — showing cached data';
+      toast(msg, 'error', 4000);
+    }
+    // state already has local data from Step 1 — nothing to do
   } finally {
     loader.classList.add('hidden');
   }
@@ -4219,8 +4218,10 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ document.querySel
 // ── INIT ──
 document.getElementById('revBadge').textContent = 'rev:'+REV;
 document.getElementById('homeRevBadge').textContent = 'rev:'+REV;
+// Show cached data immediately (fast first paint)
 lsLoad();
 renderHome();
+// Then sync with server (loadFromAPI calls lsLoad again internally as baseline)
 checkJoinLink().then(joined => {
   if(!joined) loadFromAPI().then(()=>renderHome());
 });
