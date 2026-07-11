@@ -1672,7 +1672,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '695e8b7';
+const REV = '6c6ffd6';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -1948,9 +1948,9 @@ async function loadFromAPI() {
       const local  = localSnapshot[id];
 
       if (!server && local) {
-        // Local only — we have a token but server didn't return it
-        // (common on mobile when re-registration hasn't propagated yet)
-        return local;
+        // Local only — token exists but server didn't return it yet
+        // Keep showing it but mark stale so it re-fetches when opened
+        return { ...local, _loaded: false };
       }
       if (server && !local) {
         // Server only — new trip not yet cached
@@ -1965,7 +1965,9 @@ async function loadFromAPI() {
           _totalAmount: server.total_amount || null,
         };
       }
-      // Both exist — merge, keeping local full data, updating metadata
+      // Both exist — update metadata from server, mark stale so
+      // openTrip always re-fetches fresh data from D1 on next open.
+      // Keep local people/expenses only as a display fallback until reload.
       return {
         ...(local || {}),
         name:       server.name,
@@ -1977,6 +1979,7 @@ async function loadFromAPI() {
         _peopleCount:  server.people_count  || local?._peopleCount  || 0,
         _expenseCount: server.expense_count || local?._expenseCount || 0,
         _totalAmount:  server.total_amount  || local?._totalAmount  || null,
+        _loaded: false,  // always re-fetch from D1 on next open
       };
     }).filter(Boolean);
 
@@ -4557,12 +4560,17 @@ if(!testLocalStorage()) {
 // Show cached data immediately (fast first paint)
 lsLoad();
 renderHome();
-// Then sync with server
-checkJoinLink().then(joined => {
-  if(!joined) loadFromAPI().then(()=>{
+// Then sync with server — always re-fetches fresh data from D1
+checkJoinLink().then(async joined => {
+  if(!joined) {
+    await loadFromAPI();
     renderHome();
-    // debug panel hidden by default
-  });
+    // If a trip is currently open, reload its full data from D1
+    if(state.currentTripId) {
+      await loadTrip(state.currentTripId);
+      renderAll();
+    }
+  }
 });
 </script>
 </body>
