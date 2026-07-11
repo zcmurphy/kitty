@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 1cc9cfa
+//  Kitty API Worker  rev: 1fe5e2c
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '1cc9cfa';
+const REV = '1fe5e2c';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -338,6 +338,79 @@ export default {
         }
       }
 
+
+
+      // ── TRIP PREVIEW — Open Graph page for social link previews ──
+      // Crawlers read OG tags; humans get redirected to the app
+      if (resource === 'preview' && id) {
+        const tripId = id;
+        const token  = url.searchParams.get('token') || '';
+        const appUrl = 'https://zcmurphy.github.io/index.html'
+          + '?trip=' + encodeURIComponent(tripId)
+          + '&token=' + encodeURIComponent(token);
+
+        // Fetch trip metadata (no auth needed for preview — public metadata only)
+        const trip = await env.DB.prepare(
+          `SELECT name, start_date, end_date, icon, cover_photo FROM trips WHERE id=?`
+        ).bind(tripId).first().catch(()=>null);
+
+        if (!trip) {
+          return new Response('Trip not found', { status: 404 });
+        }
+
+        const title       = (trip.icon||'✈️') + ' ' + trip.name;
+        const description = [
+          'Join ' + trip.name + ' on Kitty — shared trip expenses.',
+          trip.start_date ? trip.start_date + (trip.end_date ? ' – ' + trip.end_date : '') : '',
+        ].filter(Boolean).join(' · ');
+
+        // Cover photo URL if available
+        const imageUrl = trip.cover_photo
+          ? url.origin + '/api/photos/' + trip.cover_photo
+          : 'https://zcmurphy.github.io/kitty-og.png'; // fallback generic image
+
+        // Detect crawler vs human
+        const ua = req.headers.get('User-Agent') || '';
+        const isCrawler = /facebookexternalhit|Twitterbot|WhatsApp|Slackbot|TelegramBot|LinkedInBot|Discordbot|iMessage|curl|python/i.test(ua);
+
+        if (!isCrawler) {
+          // Human — redirect straight to app
+          return Response.redirect(appUrl, 302);
+        }
+
+        // Crawler — return OG HTML
+        const html = \`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>\${title}</title>
+  <meta property="og:title"       content="\${title}">
+  <meta property="og:description" content="\${description}">
+  <meta property="og:image"       content="\${imageUrl}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:type"        content="website">
+  <meta property="og:url"         content="\${url.origin}/api/preview/\${tripId}?token=\${token}">
+  <meta name="twitter:card"       content="summary_large_image">
+  <meta name="twitter:title"      content="\${title}">
+  <meta name="twitter:description" content="\${description}">
+  <meta name="twitter:image"      content="\${imageUrl}">
+  <meta http-equiv="refresh" content="0;url=\${appUrl}">
+</head>
+<body>
+  <p>Redirecting to Kitty...</p>
+  <a href="\${appUrl}">Click here if not redirected</a>
+</body>
+</html>\`;
+
+        return new Response(html, {
+          headers: {
+            'Content-Type': 'text/html;charset=utf-8',
+            'Cache-Control': 'public,max-age=60',
+            ...corsHeaders(req),
+          }
+        });
+      }
 
       // ── LEAVE TRIP — remove from session only, don't delete data ──
       if (resource === 'session' && id === 'trip' && sub) {

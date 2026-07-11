@@ -1083,6 +1083,78 @@
   }
   .btn-leave:hover { opacity: 0.7; }
 
+
+  /* ── INVITE FRIENDS ── */
+  .invite-sheet {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    z-index: 450; display: flex; align-items: flex-end;
+    animation: fadeIn 0.15s ease;
+  }
+  .invite-sheet.hidden { display: none; }
+  .invite-sheet-inner {
+    background: var(--surface); width: 100%; border-radius: 20px 20px 0 0;
+    padding: 20px; padding-bottom: max(24px, env(safe-area-inset-bottom));
+    box-shadow: 0 -4px 40px rgba(0,0,0,0.15);
+    animation: slideUp 0.25s cubic-bezier(0.32,0.72,0,1);
+  }
+  @keyframes slideUp { from{transform:translateY(100%)} to{transform:none} }
+  .invite-sheet-title {
+    font-size: 17px; font-weight: 700; text-align: center;
+    margin-bottom: 4px; color: var(--ink);
+  }
+  .invite-sheet-sub {
+    font-size: 13px; color: var(--ink-3); text-align: center;
+    margin-bottom: 20px;
+  }
+  .invite-trip-preview {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px; background: var(--surface-2);
+    border-radius: 12px; margin-bottom: 20px;
+    border: 1.5px solid var(--border);
+  }
+  .invite-trip-thumb {
+    width: 52px; height: 52px; border-radius: 10px; object-fit: cover;
+    background: var(--surface); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 24px;
+  }
+  .invite-trip-info { flex: 1; min-width: 0; }
+  .invite-trip-name { font-weight: 600; font-size: 15px; color: var(--ink); }
+  .invite-trip-meta { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  .invite-code-row {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    margin-bottom: 20px;
+  }
+  .invite-code {
+    font-family: 'Roboto Mono', monospace; font-size: 26px; font-weight: 700;
+    letter-spacing: .2em; color: var(--ink); background: var(--surface-2);
+    border: 1.5px solid var(--border); border-radius: 10px;
+    padding: 8px 16px;
+  }
+  .invite-actions {
+    display: grid; gap: 10px;
+  }
+  .invite-action-btn {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border-radius: 12px; cursor: pointer;
+    border: 1.5px solid var(--border); background: var(--surface);
+    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 500;
+    color: var(--ink); transition: background 0.15s; text-align: left;
+    width: 100%;
+  }
+  .invite-action-btn:hover { background: var(--surface-2); }
+  .invite-action-btn.primary {
+    background: var(--ink); color: white; border-color: var(--ink);
+  }
+  .invite-action-btn.primary:hover { opacity: 0.9; }
+  .invite-action-icon { font-size: 22px; width: 28px; text-align: center; flex-shrink: 0; }
+  .invite-action-label { flex: 1; }
+  .invite-action-desc { font-size: 11px; opacity: 0.6; font-weight: 400; }
+  .invite-dismiss {
+    margin-top: 12px; width: 100%; padding: 12px;
+    border: none; background: none; font-size: 15px; font-weight: 500;
+    color: var(--ink-3); cursor: pointer; font-family: 'Inter', sans-serif;
+  }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1120,9 +1192,10 @@
           <div class="home-heading">Your Trips</div>
           <div class="home-sub">Track shared expenses, settle up with the group. <span id="homeRevBadge" style="font-family:'Roboto Mono',monospace;font-size:10px;color:var(--ink-4);letter-spacing:.04em;margin-left:4px"></span></div>
         </div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
           <button class="btn btn-outline" onclick="showJoinModal()">Join a Trip</button>
           <button class="btn btn-primary" onclick="showNewTripModal()">+ New Trip</button>
+          <button title="Debug info" onclick="showMobileDebug();document.getElementById('mobileDebug').style.display='block'" style="background:none;border:none;cursor:pointer;font-size:16px;padding:4px;opacity:0.4;line-height:1" id="debugBtn">🔧</button>
         </div>
       </div>
       <div class="trips-grid" id="tripsGrid"></div>
@@ -1561,6 +1634,30 @@
   </div>
 </div>
 
+<!-- INVITE FRIENDS SHEET -->
+<div class="invite-sheet hidden" id="inviteSheet" onclick="if(event.target===this)closeInviteSheet()">
+  <div class="invite-sheet-inner">
+    <div class="invite-sheet-title">Invite Friends</div>
+    <div class="invite-sheet-sub" id="inviteSheetSub">Share the trip with your group</div>
+
+    <div class="invite-trip-preview">
+      <div class="invite-trip-thumb" id="inviteThumb"></div>
+      <div class="invite-trip-info">
+        <div class="invite-trip-name" id="inviteTripName"></div>
+        <div class="invite-trip-meta" id="inviteTripMeta"></div>
+      </div>
+    </div>
+
+    <div class="invite-code-row">
+      <div class="invite-code" id="inviteCode"></div>
+    </div>
+
+    <div class="invite-actions" id="inviteActions"></div>
+
+    <button class="invite-dismiss" onclick="closeInviteSheet()">Dismiss</button>
+  </div>
+</div>
+
 <!-- LIGHTBOX -->
 <div class="lightbox hidden" id="lightbox" onclick="closeLightbox()">
   <img id="lightboxImg" src="" alt="Receipt">
@@ -1575,7 +1672,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '1cc9cfa';
+const REV = 'ffa60a6';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -2592,6 +2689,119 @@ async function checkJoinLink() {
   const trip = state.trips.find(t=>t.id===tripId);
   if(trip) openTrip(tripId);
   return true;
+}
+
+
+// ── Invite Friends Sheet ────────────────────────────────────
+function showInviteSheet() {
+  const t = currentTrip(); if(!t) return;
+
+  // Trip thumbnail
+  const thumb = document.getElementById('inviteThumb');
+  if(t.coverPhoto) {
+    const img = document.createElement('img');
+    img.style.cssText = 'width:52px;height:52px;border-radius:10px;object-fit:cover';
+    img.src = photoUrl(t.coverPhoto);
+    thumb.innerHTML = ''; thumb.appendChild(img);
+  } else {
+    thumb.textContent = t.icon || '✈️';
+  }
+
+  document.getElementById('inviteTripName').textContent = t.name;
+  document.getElementById('inviteTripMeta').textContent = [
+    t.startDate, t.endDate ? '– '+t.endDate : '',
+    t.people.length ? t.people.length+' people' : ''
+  ].filter(Boolean).join(' · ');
+  document.getElementById('inviteCode').textContent = t.code || '——';
+
+  // Build share link — use Worker preview URL for OG tags
+  const token = getToken(t.id);
+  const previewUrl = 'https://kitty-api.zbcimz.workers.dev/api/preview/' + t.id + '?token=' + token;
+  const directUrl  = 'https://zcmurphy.github.io/?trip=' + t.id + '&token=' + token;
+  const shareText  = 'Join me on Kitty for ' + t.name + '! Tap to join:';
+  const fullMsg    = shareText + ' ' + previewUrl;
+
+  const actions = document.getElementById('inviteActions');
+  actions.innerHTML = '';
+
+  // ── Native Share API (iOS/Android share sheet) ──
+  if(navigator.share) {
+    const btn = document.createElement('button');
+    btn.className = 'invite-action-btn primary';
+    btn.innerHTML = '<span class="invite-action-icon">📤</span>'
+      + '<span class="invite-action-label">Share via...<div class="invite-action-desc">Opens your device share sheet — Messages, WhatsApp, Mail & more</div></span>';
+    btn.onclick = async () => {
+      try {
+        await navigator.share({
+          title: t.name + ' — Kitty',
+          text:  shareText,
+          url:   previewUrl,
+        });
+      } catch(e) { if(e.name!=='AbortError') toast('Share failed: '+e.message,'error'); }
+    };
+    actions.appendChild(btn);
+  }
+
+  // ── SMS ──
+  const smsBtn = document.createElement('button');
+  smsBtn.className = 'invite-action-btn';
+  smsBtn.innerHTML = '<span class="invite-action-icon">💬</span>'
+    + '<span class="invite-action-label">Text Message<div class="invite-action-desc">Opens Messages with invite pre-written</div></span>';
+  smsBtn.onclick = () => {
+    const smsBody = encodeURIComponent(fullMsg);
+    window.open('sms:&body=' + smsBody, '_blank');
+  };
+  actions.appendChild(smsBtn);
+
+  // ── WhatsApp ──
+  const waBtn = document.createElement('button');
+  waBtn.className = 'invite-action-btn';
+  waBtn.innerHTML = '<span class="invite-action-icon">🟢</span>'
+    + '<span class="invite-action-label">WhatsApp<div class="invite-action-desc">Opens WhatsApp with invite pre-written</div></span>';
+  waBtn.onclick = () => {
+    window.open('https://wa.me/?text=' + encodeURIComponent(fullMsg), '_blank');
+  };
+  actions.appendChild(waBtn);
+
+  // ── Copy link ──
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'invite-action-btn';
+  copyBtn.innerHTML = '<span class="invite-action-icon">🔗</span>'
+    + '<span class="invite-action-label">Copy Invite Link<div class="invite-action-desc">' + previewUrl.slice(0,45) + '…</div></span>';
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(fullMsg).then(() => {
+      toast('Invite link copied!', 'success', 2000);
+      closeInviteSheet();
+    }).catch(() => {
+      // Fallback for older mobile browsers
+      const ta = document.createElement('textarea');
+      ta.value = fullMsg; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+      toast('Invite link copied!', 'success', 2000);
+      closeInviteSheet();
+    });
+  };
+  actions.appendChild(copyBtn);
+
+  // ── Code only (for typing manually) ──
+  const codeBtn = document.createElement('button');
+  codeBtn.className = 'invite-action-btn';
+  codeBtn.innerHTML = '<span class="invite-action-icon">🔢</span>'
+    + '<span class="invite-action-label">Copy Join Code Only<div class="invite-action-desc">Code: '+(t.code||'—')+'  · Friends type it in Join a Trip</div></span>';
+  codeBtn.onclick = () => {
+    navigator.clipboard.writeText(t.code||'').then(()=>{
+      toast('Code '+t.code+' copied', 'success', 2000);
+      closeInviteSheet();
+    }).catch(()=>{});
+  };
+  actions.appendChild(codeBtn);
+
+  document.getElementById('inviteSheet').classList.remove('hidden');
+}
+
+function closeInviteSheet() {
+  document.getElementById('inviteSheet').classList.add('hidden');
 }
 
 
@@ -4305,6 +4515,8 @@ document.getElementById('homeRevBadge').textContent = 'rev:'+REV;
 function showMobileDebug() {
   const panel = document.getElementById('mobileDebug');
   if(!panel) return;
+  // Toggle — if already visible, hide it
+  if(panel.style.display === 'block') { panel.style.display='none'; return; }
   const keys = [];
   let hasV3 = false, v3Trips = 0, tokens = [], sid = '';
   for(let i=0; i<localStorage.length; i++){
@@ -4327,9 +4539,7 @@ function showMobileDebug() {
   panel.onclick = ()=>{ panel.style.display='none'; };
 }
 
-// Show debug on mobile (detect by touch support or small screen)
-const isMobile = navigator.maxTouchPoints > 0 || window.innerWidth < 768;
-if(isMobile) setTimeout(showMobileDebug, 800);
+// Debug panel is triggered manually via header button
 
 // Test localStorage is actually writable
 function testLocalStorage() {
@@ -4351,7 +4561,7 @@ renderHome();
 checkJoinLink().then(joined => {
   if(!joined) loadFromAPI().then(()=>{
     renderHome();
-    if(isMobile) setTimeout(showMobileDebug, 200);
+    // debug panel hidden by default
   });
 });
 </script>
