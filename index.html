@@ -1563,7 +1563,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '844c92c';
+const REV = 'bac1a0f';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -2589,21 +2589,49 @@ async function doJoinTrip() {
   try {
     const res = await api('GET', '/join/' + code);
     if (res.error) { errEl.textContent = res.error; btn.textContent='Join Trip →'; btn.disabled=false; return; }
-    // Store token
+
+    // ── Step 1: persist session ID IMMEDIATELY from this response ──
+    // This is the most important step — do it before anything else
+    if(res._sid) {
+      setSessionId(res._sid);
+      console.log('[join] stored sid:', res._sid.slice(0,8));
+    }
+
+    // ── Step 2: persist invite token ──
     setToken(res.tripId, res.token);
-    const joinPatch = await api('PATCH', '/session', { tripId: res.tripId, token: res.token }).catch(()=>({}));
-    if(joinPatch && joinPatch._sid) setSessionId(joinPatch._sid);
-    // Add trip to local state if not already there
+    console.log('[join] stored token for trip:', res.tripId);
+
+    // ── Step 3: add trip to local state ──
     if (!state.trips.find(t=>t.id===res.tripId)) {
       state.trips.push({
         id: res.tripId, name: res.trip.name, code,
         startDate: res.trip.start_date||'', endDate: res.trip.end_date||'',
-        icon: res.trip.icon||'', coverPhoto: null,
+        icon: res.trip.icon||'', coverPhoto: res.trip.cover_photo||null,
         people: [], expenses: [], history: [], settledPayments: [],
-        _loaded: false
+        _loaded: false,
+        _peopleCount: res.trip.people_count||0,
+        _expenseCount: res.trip.expense_count||0,
       });
     }
+
+    // ── Step 4: persist everything to localStorage NOW ──
     lsSave();
+    console.log('[join] lsSave done, trips:', state.trips.length);
+
+    // ── Step 5: verify the write actually worked ──
+    const verify = localStorage.getItem('kitty_v3');
+    const tokenCheck = localStorage.getItem('kitty_token_'+res.tripId);
+    const sidCheck = localStorage.getItem('kitty_sid');
+    console.log('[join] verify - v3:', !!verify, 'token:', !!tokenCheck, 'sid:', !!sidCheck);
+
+    if(!tokenCheck) {
+      // localStorage write failed — show warning
+      toast('⚠ Storage write failed. Trip may not persist on refresh.', 'error', 5000);
+    }
+
+    // ── Step 6: register with session (non-critical, fire and forget) ──
+    api('PATCH', '/session', { tripId: res.tripId, token: res.token }).catch(()=>{});
+
     closeModal('modalJoin');
     toast('Joined ' + res.trip.name + '!', 'success');
     openTrip(res.tripId);
@@ -4250,7 +4278,20 @@ function showMobileDebug() {
 
 // Show debug on mobile (detect by touch support or small screen)
 const isMobile = navigator.maxTouchPoints > 0 || window.innerWidth < 768;
-if(isMobile) setTimeout(showMobileDebug, 500);
+if(isMobile) setTimeout(showMobileDebug, 800);
+
+// Test localStorage is actually writable
+function testLocalStorage() {
+  try {
+    localStorage.setItem('kitty_test', '1');
+    const ok = localStorage.getItem('kitty_test') === '1';
+    localStorage.removeItem('kitty_test');
+    return ok;
+  } catch(e) { return false; }
+}
+if(!testLocalStorage()) {
+  setTimeout(()=>toast('⚠ Storage unavailable — trips cannot be saved on this browser', 'error', 8000), 1000);
+}
 
 // Show cached data immediately (fast first paint)
 lsLoad();

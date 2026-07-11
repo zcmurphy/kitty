@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: ddd60dd
+//  Kitty API Worker  rev: bac1a0f
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = 'ddd60dd';
+const REV = 'bac1a0f';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -339,7 +339,10 @@ export default {
       if (resource === 'join' && id) {
         const code = id.toUpperCase();
         const trip = await env.DB.prepare(
-          `SELECT id, name, start_date, end_date, icon FROM trips WHERE code=?`
+          `SELECT id, name, start_date, end_date, icon, cover_photo,
+            (SELECT COUNT(*) FROM people WHERE trip_id=t.id) as people_count,
+            (SELECT COUNT(*) FROM expenses WHERE trip_id=t.id) as expense_count
+           FROM trips t WHERE code=?`
         ).bind(code).first();
         if (!trip) return respond({ error: 'Trip not found — check your code' }, 404);
 
