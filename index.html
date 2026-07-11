@@ -1193,6 +1193,9 @@
 <!-- TOAST -->
 <div class="toast-wrap" id="toastWrap"></div>
 
+<!-- MOBILE DEBUG -->
+<div id="mobileDebug" style="display:none;position:fixed;top:60px;left:12px;right:12px;z-index:600;cursor:pointer"></div>
+
 <!-- LOADER -->
 <div class="screen-loader" id="screenLoader"><div class="loader-spinner"></div><div class="loader-text">Loading…</div></div>
 
@@ -1560,7 +1563,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'ddd60dd';
+const REV = '844c92c';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -4218,12 +4221,46 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ document.querySel
 // ── INIT ──
 document.getElementById('revBadge').textContent = 'rev:'+REV;
 document.getElementById('homeRevBadge').textContent = 'rev:'+REV;
+
+// ── Mobile debug: show localStorage state on startup ──────────
+function showMobileDebug() {
+  const panel = document.getElementById('mobileDebug');
+  if(!panel) return;
+  const keys = [];
+  let hasV3 = false, v3Trips = 0, tokens = [], sid = '';
+  for(let i=0; i<localStorage.length; i++){
+    const k = localStorage.key(i);
+    keys.push(k);
+    if(k==='kitty_v3') { hasV3=true; try{ v3Trips=JSON.parse(localStorage.getItem(k)).trips.length; }catch(e){} }
+    if(k && k.startsWith('kitty_token_')) tokens.push(k.replace('kitty_token_',''));
+    if(k==='kitty_sid') sid = localStorage.getItem(k)||'';
+  }
+  panel.innerHTML =
+    '<div style="font-size:11px;font-family:monospace;background:#1a1a1a;color:#e0e0e0;padding:10px;border-radius:8px;margin:12px 0;line-height:1.7">'
+    +'<div style="color:#aaa;margin-bottom:4px">📱 Debug (tap to dismiss)</div>'
+    +'<div>LS keys: <b>'+keys.length+'</b></div>'
+    +'<div>kitty_v3: <b style="color:'+(hasV3?'#7fc87f':'#e07070')+'">'+(hasV3?'found ('+v3Trips+' trips)':'MISSING')+'</b></div>'
+    +'<div>tokens: <b style="color:'+(tokens.length?'#7fc87f':'#e07070')+'">'+(tokens.length?tokens.join(', '):'none')+'</b></div>'
+    +'<div>sid: <b style="color:'+(sid?'#7fc87f':'#e07070')+'">'+(sid?sid.slice(0,12)+'…':'MISSING')+'</b></div>'
+    +'<div style="color:#aaa;font-size:10px">All LS keys: '+keys.join(', ')+'</div>'
+    +'</div>';
+  panel.style.display='block';
+  panel.onclick = ()=>{ panel.style.display='none'; };
+}
+
+// Show debug on mobile (detect by touch support or small screen)
+const isMobile = navigator.maxTouchPoints > 0 || window.innerWidth < 768;
+if(isMobile) setTimeout(showMobileDebug, 500);
+
 // Show cached data immediately (fast first paint)
 lsLoad();
 renderHome();
-// Then sync with server (loadFromAPI calls lsLoad again internally as baseline)
+// Then sync with server
 checkJoinLink().then(joined => {
-  if(!joined) loadFromAPI().then(()=>renderHome());
+  if(!joined) loadFromAPI().then(()=>{
+    renderHome();
+    if(isMobile) setTimeout(showMobileDebug, 200);
+  });
 });
 </script>
 </body>
