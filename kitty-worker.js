@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: bac1a0f
+//  Kitty API Worker  rev: 74bce50
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = 'bac1a0f';
+const REV = '74bce50';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -266,11 +266,17 @@ export default {
 
     // Get or create session for every request
     const { sid, sess, isNew } = await getOrCreateSession(req, env);
-    const cookieHeader = isNew ? { 'Set-Cookie': setCookieHeader(COOKIE_NAME, sid, SESSION_TTL) } : {};
+    // Always set/refresh cookie (not just for new sessions — refreshes TTL on mobile)
+    const cookieHeader = { 'Set-Cookie': setCookieHeader(COOKIE_NAME, sid, SESSION_TTL) };
 
-    // Helper: respond with json + always attach cookie if new
-    const respond = (data, status=200, extra={}) =>
-      json(data, status, { ...cookieHeader, ...extra }, req);
+    // Helper: inject _sid into every response so app can store it as header fallback
+    const respond = (data, status=200, extra={}) => {
+      // Arrays can't be spread — wrap in object for _sid injection, then unwrap
+      const body = Array.isArray(data)
+        ? { _sid: sid, _data: data }  // app handles _data for array responses
+        : { ...data, _sid: sid };
+      return json(body, status, { ...cookieHeader, ...extra }, req);
+    };
 
     try {
 

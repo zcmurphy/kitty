@@ -1563,7 +1563,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'bac1a0f';
+const REV = '0f1df30';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -1617,8 +1617,12 @@ async function api(method, path, body, tripId) {
     if(!r.ok) { const e=await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
     setSyncDot('ok');
     const data = await r.json();
-    // Store session ID from response for mobile fallback
-    if(data._sid) setSessionId(data._sid);
+    // Store session ID from every response (mobile cookie fallback)
+    if(data && data._sid) {
+      setSessionId(data._sid);
+    }
+    // Unwrap array responses that were wrapped to allow _sid injection
+    if(data && data._data !== undefined) return data._data;
     return data;
   } catch(e) {
     setSyncDot('err');
