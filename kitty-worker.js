@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 1fe5e2c
+//  Kitty API Worker  rev: 695e8b7
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '1fe5e2c';
+const REV = '695e8b7';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -379,29 +379,27 @@ export default {
         }
 
         // Crawler — return OG HTML
-        const html = \`<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>\${title}</title>
-  <meta property="og:title"       content="\${title}">
-  <meta property="og:description" content="\${description}">
-  <meta property="og:image"       content="\${imageUrl}">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:type"        content="website">
-  <meta property="og:url"         content="\${url.origin}/api/preview/\${tripId}?token=\${token}">
-  <meta name="twitter:card"       content="summary_large_image">
-  <meta name="twitter:title"      content="\${title}">
-  <meta name="twitter:description" content="\${description}">
-  <meta name="twitter:image"      content="\${imageUrl}">
-  <meta http-equiv="refresh" content="0;url=\${appUrl}">
-</head>
-<body>
-  <p>Redirecting to Kitty...</p>
-  <a href="\${appUrl}">Click here if not redirected</a>
-</body>
-</html>\`;
+        const html = [
+          '<!DOCTYPE html><html><head>',
+          '<meta charset="utf-8">',
+          '<title>' + title + '</title>',
+          '<meta property="og:title" content="' + title + '">',
+          '<meta property="og:description" content="' + description + '">',
+          '<meta property="og:image" content="' + imageUrl + '">',
+          '<meta property="og:image:width" content="1200">',
+          '<meta property="og:image:height" content="630">',
+          '<meta property="og:type" content="website">',
+          '<meta property="og:url" content="' + url.origin + '/api/preview/' + tripId + '?token=' + token + '">',
+          '<meta name="twitter:card" content="summary_large_image">',
+          '<meta name="twitter:title" content="' + title + '">',
+          '<meta name="twitter:description" content="' + description + '">',
+          '<meta name="twitter:image" content="' + imageUrl + '">',
+          '<meta http-equiv="refresh" content="0;url=' + appUrl + '">',
+          '</head><body>',
+          '<p>Redirecting to Kitty...</p>',
+          '<a href="' + appUrl + '">Click here if not redirected</a>',
+          '</body></html>',
+        ].join('\n');
 
         return new Response(html, {
           headers: {
