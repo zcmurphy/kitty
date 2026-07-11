@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 74bce50
+//  Kitty API Worker  rev: 1cc9cfa
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '74bce50';
+const REV = '1cc9cfa';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -17,6 +17,7 @@ function corsHeaders(req) {
     'Access-Control-Allow-Origin':      origin,
     'Access-Control-Allow-Methods':     'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers':     'Content-Type, Authorization, X-Invite-Token, Cookie, X-Session-Id',
+    'Access-Control-Expose-Headers':    'X-Session-Id',
     'Access-Control-Allow-Credentials': 'true',
   };
 }
@@ -269,13 +270,13 @@ export default {
     // Always set/refresh cookie (not just for new sessions — refreshes TTL on mobile)
     const cookieHeader = { 'Set-Cookie': setCookieHeader(COOKIE_NAME, sid, SESSION_TTL) };
 
-    // Helper: inject _sid into every response so app can store it as header fallback
+    // Helper: inject _sid into response header + body
+    const sidHeaders = { 'X-Session-Id': sid, 'Access-Control-Expose-Headers': 'X-Session-Id' };
     const respond = (data, status=200, extra={}) => {
-      // Arrays can't be spread — wrap in object for _sid injection, then unwrap
       const body = Array.isArray(data)
-        ? { _sid: sid, _data: data }  // app handles _data for array responses
+        ? { _sid: sid, _data: data }
         : { ...data, _sid: sid };
-      return json(body, status, { ...cookieHeader, ...extra }, req);
+      return json(body, status, { ...cookieHeader, ...sidHeaders, ...extra }, req);
     };
 
     try {
@@ -335,6 +336,16 @@ export default {
             },
           });
         }
+      }
+
+
+      // ── LEAVE TRIP — remove from session only, don't delete data ──
+      if (resource === 'session' && id === 'trip' && sub) {
+        const tripId = sub;
+        delete sess.tripTokens[tripId];
+        delete sess.whoByTrip[tripId];
+        await saveSession(env, sid, sess);
+        return respond({ ok: true });
       }
 
       // ── VERSION ────────────────────────────────────────────

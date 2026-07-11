@@ -1074,6 +1074,15 @@
   .p2p-total-row td { background: var(--surface-2); border-top: 1.5px solid var(--border); font-weight: 600; }
   .p2p-legend { display: flex; gap: 16px; margin-top: 10px; font-size: 11px; color: var(--ink-3); }
 
+
+  /* ── LEAVE TRIP ── */
+  .btn-leave {
+    font-size: 12px; color: var(--red); background: none; border: none;
+    cursor: pointer; padding: 4px 0; text-decoration: underline;
+    font-family: 'Inter', sans-serif; transition: opacity 0.15s;
+  }
+  .btn-leave:hover { opacity: 0.7; }
+
   /* scrollbar */
   ::-webkit-scrollbar { width:5px; }
   ::-webkit-scrollbar-track { background:transparent; }
@@ -1513,8 +1522,11 @@
 
     </div>
     <div class="modal-footer" style="justify-content:space-between">
-      <div id="deleteTripZone">
-        <button class="btn btn-outline btn-delete-outline btn-sm" onclick="showDeleteTripConfirm()">Delete Trip</button>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div id="deleteTripZone">
+          <button class="btn btn-outline btn-delete-outline btn-sm" onclick="showDeleteTripConfirm()">Delete Trip</button>
+        </div>
+        <button class="btn-leave" onclick="confirmLeaveTrip()">Leave this trip</button>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-ghost" onclick="closeModal('modalTripSettings')">Cancel</button>
@@ -1563,7 +1575,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = '0f1df30';
+const REV = '1cc9cfa';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -1605,23 +1617,32 @@ async function api(method, path, body, tripId) {
     const sid   = getSessionId();
     const opts = {
       method,
-      credentials: 'include',   // send cookie when available
+      credentials: 'include',
       headers: {
         'Content-Type':   'application/json',
         'X-Invite-Token': token,
-        ...(sid ? { 'X-Session-Id': sid } : {}),  // mobile cookie fallback
+        ...(sid ? { 'X-Session-Id': sid } : {}),
       }
     };
     if(body) opts.body = JSON.stringify(body);
     const r = await fetch(API+path, opts);
+
+    // Read sid from header first (most reliable on mobile)
+    const headerSid = r.headers.get('X-Session-Id');
+    if(headerSid) {
+      localStorage.setItem('kitty_sid', headerSid);
+    }
+
     if(!r.ok) { const e=await r.json().catch(()=>({error:r.statusText})); throw new Error(e.error||r.statusText); }
     setSyncDot('ok');
     const data = await r.json();
-    // Store session ID from every response (mobile cookie fallback)
-    if(data && data._sid) {
-      setSessionId(data._sid);
+
+    // Also read from body as fallback
+    if(data && data._sid && !headerSid) {
+      localStorage.setItem('kitty_sid', data._sid);
     }
-    // Unwrap array responses that were wrapped to allow _sid injection
+
+    // Unwrap array responses
     if(data && data._data !== undefined) return data._data;
     return data;
   } catch(e) {
@@ -2648,6 +2669,32 @@ async function doJoinTrip() {
 function copyTripCode() {
   const t = currentTrip(); if(!t?.code) return;
   navigator.clipboard.writeText(t.code).then(()=>toast('Code copied: ' + t.code, 'success', 2000)).catch(()=>{});
+}
+
+
+function confirmLeaveTrip() {
+  const t = currentTrip(); if(!t) return;
+  customConfirm(
+    'Leave Trip',
+    `Leave "${t.name}"? You can rejoin later with the trip code (${t.code||'ask the organiser'}).`,
+    async () => {
+      // Remove token from localStorage
+      localStorage.removeItem('kitty_token_'+t.id);
+      // Remove from local state
+      state.trips = state.trips.filter(tr => tr.id !== t.id);
+      state.currentTripId = null;
+      lsSave();
+      // Remove from server session
+      try {
+        await api('DELETE', '/session/trip/'+t.id);
+      } catch(e) {
+        // Non-critical — local state already cleaned
+      }
+      closeModal('modalTripSettings');
+      toast('You have left ' + t.name);
+      goHome();
+    }
+  );
 }
 
 
