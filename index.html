@@ -1690,7 +1690,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'c0ff93d';
+const REV = '8f7e012';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -2736,8 +2736,10 @@ function showInviteSheet() {
   document.getElementById('inviteCode').textContent = t.code || '——';
 
   // Build share link — use Worker preview URL for OG tags
+  console.log('[invite] trip id:', t.id, 'token:', getToken(t.id));
   const token = getToken(t.id);
   const previewUrl = 'https://kitty-api.zbcimz.workers.dev/api/preview/' + t.id + '?token=' + token;
+  console.log('[invite] previewUrl:', previewUrl);
   const directUrl  = 'https://zcmurphy.github.io/?trip=' + t.id + '&token=' + token;
   const shareText  = 'Join me on Kitty for ' + t.name + '! Tap to join:';
   const fullMsg    = shareText + ' ' + previewUrl;
@@ -2844,6 +2846,9 @@ async function doJoinTrip() {
   btn.textContent = 'Joining…'; btn.disabled = true;
   try {
     const res = await api('GET', '/join/' + code);
+    // Debug — log full response to console
+    console.log('[join] raw response:', JSON.stringify(res).slice(0,300));
+    console.log('[join] tripId:', res.tripId, 'token:', res.token, 'trip.id:', res.trip?.id);
     if (res.error) { errEl.textContent = res.error; btn.textContent='Join Trip →'; btn.disabled=false; return; }
 
     // ── Step 1: persist session ID IMMEDIATELY from this response ──
@@ -2879,6 +2884,11 @@ async function doJoinTrip() {
     const tokenCheck = localStorage.getItem('kitty_token_'+res.tripId);
     const sidCheck = localStorage.getItem('kitty_sid');
     console.log('[join] verify - v3:', !!verify, 'token:', !!tokenCheck, 'sid:', !!sidCheck);
+    // Show all LS keys in a toast for mobile debugging
+    const lsKeys = [];
+    for(let i=0;i<localStorage.length;i++) lsKeys.push(localStorage.key(i));
+    console.log('[join] all LS keys:', lsKeys);
+    toast('tripId:'+res.tripId.slice(0,8)+' token:'+res.token.slice(0,8), '', 4000);
 
     if(!tokenCheck) {
       // localStorage write failed — show warning
