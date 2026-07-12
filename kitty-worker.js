@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────────────────────
-//  Kitty API Worker  rev: 8f7e012
+//  Kitty API Worker  rev: c6831c4
 //  Bindings:
 //    DB  → D1  (kittydb)
 //    R2  → R2  (kitty-assets)
 //    KV  → KV  (kitty-sessions)
 // ─────────────────────────────────────────────────────────────
 
-const REV = '8f7e012';
+const REV = 'c6831c4';
 const SESSION_TTL  = 60 * 60 * 24 * 30;   // 30 days in seconds
 const COOKIE_NAME  = 'kitty_sid';
 
@@ -345,17 +345,24 @@ export default {
       if (resource === 'preview' && id) {
         const tripId = id;
         const token  = url.searchParams.get('token') || '';
-        const appUrl = 'https://zcmurphy.github.io/index.html'
+        const appUrl = 'https://zcmurphy.github.io/'
           + '?trip=' + encodeURIComponent(tripId)
           + '&token=' + encodeURIComponent(token);
 
-        // Fetch trip metadata (no auth needed for preview — public metadata only)
-        const trip = await env.DB.prepare(
-          `SELECT name, start_date, end_date, icon, cover_photo FROM trips WHERE id=?`
-        ).bind(tripId).first().catch(()=>null);
+        // Fetch trip metadata — no auth required for preview
+        let trip = null;
+        try {
+          trip = await env.DB.prepare(
+            'SELECT name, start_date, end_date, icon, cover_photo FROM trips WHERE id=?'
+          ).bind(tripId).first();
+        } catch(e) {
+          console.error('Preview DB error:', e.message);
+          return new Response('DB error: ' + e.message, { status: 500 });
+        }
 
         if (!trip) {
-          return new Response('Trip not found', { status: 404 });
+          // Trip not found — redirect to app anyway so user lands somewhere useful
+          return Response.redirect(appUrl, 302);
         }
 
         const title       = (trip.icon||'✈️') + ' ' + trip.name;
