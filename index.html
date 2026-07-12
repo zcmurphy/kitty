@@ -1242,6 +1242,7 @@
             </select>
           </div>
           <button class="btn-settings" onclick="showTripSettings()" title="Trip settings">⚙ Settings</button>
+          <button class="btn btn-outline btn-sm" onclick="showInviteSheet()" title="Invite friends">🎉 Invite</button>
           <button class="btn btn-outline btn-sm" onclick="showPeopleModal()">People</button>
           <button class="btn btn-primary" onclick="showExpenseModal()">+ Add Expense</button>
         </div>
@@ -1689,7 +1690,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'd7b50fa';
+const REV = 'c0ff93d';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
