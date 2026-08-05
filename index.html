@@ -1690,7 +1690,7 @@ let state = { trips:[], currentTripId:null };
 let currentPhoto = null;
 
 const API = 'https://kitty-api.zbcimz.workers.dev/api';
-const REV = 'c6831c4';
+const REV = 'f171803';
 
 // ── Session ID (stored in localStorage as mobile cookie fallback) ──
 function getSessionId() { return localStorage.getItem('kitty_sid') || ''; }
@@ -4170,6 +4170,7 @@ function showExpenseModal(){
   document.getElementById('pzIcon').textContent='📷';
   document.getElementById('pzText').textContent='Tap to take a photo or upload';
   currentPhoto=null;
+  editPhoto=null;
   document.querySelectorAll('#catGrid .cat-chip').forEach(c=>c.classList.remove('selected'));
   document.querySelector('[data-cat="food"]').classList.add('selected');
   const currentUser = getWho(t.id);
@@ -4180,6 +4181,9 @@ function showExpenseModal(){
     <div class="p-chip selected" data-person="${esc(p)}" style="color:${pColor(p,t.people)};border-color:${pColor(p,t.people)}40" onclick="this.classList.toggle('selected');renderSharesGrid('e')">
       <span class="p-chip-dot" style="background:${pColor(p,t.people)}"></span>${esc(p)}
     </div>`).join('');
+  // Reset save button state
+  const _saveBtn = document.querySelector('#modalExpense .btn-primary');
+  if(_saveBtn){ _saveBtn.disabled=false; _saveBtn.textContent='Add Expense'; }
   // Reset split type to even
   _splitState['e']='even';
   document.querySelectorAll('#modalExpense .split-type-tab').forEach((t,i)=>t.classList.toggle('active',i===0));
